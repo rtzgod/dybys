@@ -31,6 +31,7 @@ import {
 } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import useAppStore from '@/lib/store';
+import { SolanaService } from '@/lib/solana';
 import { toast } from 'sonner';
 
 export default function ProfilePage() {
@@ -59,6 +60,9 @@ export default function ProfilePage() {
 
   const { connected, publicKey } = useWallet();
   const { currentUser, updateUserProfile } = useAppStore();
+  const [walletBalance, setWalletBalance] = useState<number | null>(null);
+  const [loadingBalance, setLoadingBalance] = useState(false);
+  const [solanaService] = useState(() => new SolanaService());
 
   useEffect(() => {
     // Update form data when currentUser changes (handled globally now)
@@ -120,6 +124,29 @@ export default function ProfilePage() {
     
     setIsEditing(false);
   };
+
+  const fetchWalletBalance = async () => {
+    if (!connected || !publicKey) {
+      setWalletBalance(null);
+      return;
+    }
+
+    setLoadingBalance(true);
+    try {
+      const balance = await solanaService.getBalance(publicKey);
+      setWalletBalance(balance);
+    } catch (error) {
+      console.error('Failed to fetch wallet balance:', error);
+      setWalletBalance(null);
+    } finally {
+      setLoadingBalance(false);
+    }
+  };
+
+  // Fetch balance when wallet connects
+  useEffect(() => {
+    fetchWalletBalance();
+  }, [connected, publicKey]);
 
   const handleCancel = () => {
     if (currentUser) {
@@ -560,8 +587,31 @@ export default function ProfilePage() {
               <div className="pt-4 border-t">
                 <div className="space-y-2">
                   <div className="text-sm font-medium">Account Information</div>
-                  <div className="text-sm text-muted-foreground">
+                  <div className="text-sm text-muted-foreground space-y-1">
                     <div>Wallet: {publicKey?.toString().slice(0, 8)}...{publicKey?.toString().slice(-8)}</div>
+                    <div className="flex items-center justify-between">
+                      <span>Balance:</span>
+                      <div className="flex items-center space-x-2">
+                        <span className="font-medium">
+                          {loadingBalance ? (
+                            'Loading...'
+                          ) : walletBalance !== null ? (
+                            `${walletBalance.toFixed(4)} SOL`
+                          ) : (
+                            '-.-- SOL'
+                          )}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={fetchWalletBalance}
+                          disabled={loadingBalance}
+                          className="h-6 px-2 text-xs"
+                        >
+                          Refresh
+                        </Button>
+                      </div>
+                    </div>
                     <div>Role: {currentUser?.role}</div>
                     {currentUser?.joinDate && (
                       <div>Member since: {new Date(currentUser.joinDate).toLocaleDateString()}</div>

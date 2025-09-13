@@ -2,9 +2,9 @@ import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { PrismaClient } from '@prisma/client';
-import authRoutes from './routes/auth.ts';
-import trackRoutes from './routes/tracks.ts';
-import investmentRoutes from './routes/investments.ts';
+import authRoutes from './routes/auth.js';
+import trackRoutes from './routes/tracks.js';
+import investmentRoutes from './routes/investments.js';
 
 dotenv.config();
 

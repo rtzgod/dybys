@@ -1,7 +1,10 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  output: 'standalone',
+  experimental: {
+    serverComponentsExternalPackages: ['@solana/web3.js', '@solana/wallet-adapter-base'],
+  },
 };
 
 export default nextConfig;

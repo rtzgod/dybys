@@ -57,6 +57,29 @@ export class SolanaService {
     }
   }
 
+  /**
+   * Airdrop SOL to a wallet (only works on localnet/testnet)
+   */
+  async airdropSol(publicKey: PublicKey, amount: number = 100): Promise<string> {
+    try {
+      console.log(`Requesting ${amount} SOL airdrop for ${publicKey.toBase58()}`);
+      
+      const signature = await this.connection.requestAirdrop(
+        publicKey,
+        amount * LAMPORTS_PER_SOL
+      );
+      
+      // Confirm the transaction
+      await this.connection.confirmTransaction(signature, 'confirmed');
+      
+      console.log(`✅ Successfully airdropped ${amount} SOL. Signature: ${signature}`);
+      return signature;
+    } catch (error) {
+      console.error('Error during airdrop:', error);
+      throw new Error(`Failed to airdrop ${amount} SOL to wallet`);
+    }
+  }
+
   async getProvider(wallet: WalletContextState) {
     if (!wallet.publicKey || !wallet.signTransaction) {
       throw new Error('Wallet not connected');

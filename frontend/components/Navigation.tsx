@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { WalletConnect } from './WalletConnect';
+import { WalletBalance } from './WalletBalance';
 import { ClientOnly } from './ClientOnly';
 import { Music, TrendingUp, User, Upload, Settings, UserCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -51,9 +52,14 @@ export function Navigation() {
             })}
           </nav>
 
-          <ClientOnly fallback={<div className="w-32 h-8 bg-muted rounded animate-pulse" />}>
-            <WalletConnect />
-          </ClientOnly>
+          <div className="flex items-center space-x-3">
+            <ClientOnly fallback={<div className="w-24 h-8 bg-muted rounded animate-pulse" />}>
+              <WalletBalance />
+            </ClientOnly>
+            <ClientOnly fallback={<div className="w-32 h-8 bg-muted rounded animate-pulse" />}>
+              <WalletConnect />
+            </ClientOnly>
+          </div>
         </div>
       </div>
     </header>
