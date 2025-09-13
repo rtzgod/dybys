@@ -32,6 +32,23 @@ if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "win32" ]]; then
     print_info "Windows detected - make sure Docker Desktop is installed and running"
 fi
 
+# Check if running on macOS
+if [[ "$OSTYPE" == "darwin"* ]]; then
+    print_info "macOS detected - make sure Docker Desktop is installed and running"
+fi
+
+# Check if running on Linux
+if [[ "$OSTYPE" == "linux-gnu"* ]]; then
+    print_info "Linux detected - checking file descriptor limits..."
+    
+    # Check current ulimits
+    current_ulimit=$(ulimit -n)
+    if [ "$current_ulimit" -lt 1000000 ]; then
+        print_warning "Current file descriptor limit is $current_ulimit"
+        print_info "Docker will handle this automatically for the Solana validator"
+    fi
+fi
+
 # 1. Check Docker and Docker Compose
 echo ""
 echo "🔍 Checking prerequisites..."
@@ -154,18 +171,32 @@ fi
 echo ""
 echo "⏳ Waiting for all services to be ready..."
 
-# Wait up to 3 minutes for services
-timeout=180
+# Wait up to 5 minutes for services (Solana validator can take longer)
+timeout=300
 elapsed=0
-interval=10
+interval=15
 
 while [ $elapsed -lt $timeout ]; do
-    if curl -f http://localhost:3000 > /dev/null 2>&1 && \
-       curl -f http://localhost:5000/health > /dev/null 2>&1; then
+    # Check each service individually
+    frontend_ready=$(curl -f http://localhost:3000 > /dev/null 2>&1 && echo "true" || echo "false")
+    backend_ready=$(curl -f http://localhost:5000/health > /dev/null 2>&1 && echo "true" || echo "false")
+    solana_ready=$(curl -f http://localhost:8899 -X POST -H "Content-Type: application/json" -d '{"jsonrpc":"2.0","id":1,"method":"getVersion"}' > /dev/null 2>&1 && echo "true" || echo "false")
+    
+    echo "   Frontend: $frontend_ready | Backend: $backend_ready | Solana: $solana_ready (${elapsed}s elapsed)"
+    
+    if [ "$frontend_ready" = "true" ] && [ "$backend_ready" = "true" ] && [ "$solana_ready" = "true" ]; then
         break
     fi
     
-    echo "   Still starting... (${elapsed}s elapsed)"
+    # Check for Solana validator errors
+    if [ $elapsed -gt 60 ]; then
+        solana_status=$(docker-compose logs solana-validator 2>/dev/null | tail -5)
+        if echo "$solana_status" | grep -i "panic\|error\|failed" > /dev/null; then
+            print_warning "Solana validator may be having issues. Checking logs..."
+            docker-compose logs solana-validator | tail -10
+        fi
+    fi
+    
     sleep $interval
     elapsed=$((elapsed + interval))
 done
