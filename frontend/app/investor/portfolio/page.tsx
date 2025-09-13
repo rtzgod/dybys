@@ -1,0 +1,525 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { TrendingUp, DollarSign, Music, Users, ArrowUpRight, ArrowDownRight, Eye } from 'lucide-react';
+import { useWallet } from '@solana/wallet-adapter-react';
+import useAppStore from '@/lib/store';
+
+// Simple toast replacement
+const toast = {
+  success: (message: string) => alert(`Success: ${message}`),
+  error: (message: string) => alert(`Error: ${message}`)
+};
+
+interface Investment {
+  id: string;
+  trackId: string;
+  trackTitle: string;
+  artistEmail: string;
+  tokensOwned: number;
+  totalInvested: number;
+  pricePerToken: number;
+  currentValue: number;
+  royaltiesEarned: number;
+  investmentDate: string;
+  track: {
+    totalSupply: number;
+    tokensSold: number;
+    isActive: boolean;
+  };
+}
+
+interface RoyaltyPayment {
+  id: string;
+  trackTitle: string;
+  amount: number;
+  date: string;
+  transactionId: string;
+}
+
+export default function InvestorPortfolioPage() {
+  const [investments, setInvestments] = useState<Investment[]>([]);
+  const [royaltyPayments, setRoyaltyPayments] = useState<RoyaltyPayment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedInvestment, setSelectedInvestment] = useState<Investment | null>(null);
+  const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  
+  const { connected, publicKey } = useWallet();
+  const { tracks, getInvestmentsByInvestor, getInvestmentsByTrack } = useAppStore();
+
+  useEffect(() => {
+    if (connected) {
+      fetchPortfolioData();
+    }
+  }, [connected]);
+
+  const fetchPortfolioData = async () => {
+    try {
+      if (!publicKey) return;
+
+      // Get investments from store
+      const userInvestments = getInvestmentsByInvestor(publicKey.toString());
+      
+      // Transform store data to portfolio format
+      const portfolioInvestments: Investment[] = userInvestments.map(investment => {
+        const track = tracks.find(t => t.id === investment.trackId);
+        if (!track) return null;
+
+        const tokensOwned = investment.amount;
+        const totalInvested = investment.totalPaid;
+        const pricePerToken = track.pricePerToken || 0;
+        
+        // Calculate current value (simplified - could be more complex with market dynamics)
+        const currentValue = totalInvested * 1.05; // 5% appreciation for demo
+        
+        // Calculate total tokens sold for this track
+        const allTrackInvestments = getInvestmentsByTrack(track.id);
+        const tokensSold = allTrackInvestments.reduce((sum, inv) => sum + inv.amount, 0);
+
+        return {
+          id: investment.id,
+          trackId: track.id,
+          trackTitle: track.title,
+          artistEmail: track.artist.email,
+          tokensOwned,
+          totalInvested,
+          pricePerToken,
+          currentValue,
+          royaltiesEarned: totalInvested * 0.02, // 2% royalties earned for demo
+          investmentDate: investment.createdAt,
+          track: {
+            totalSupply: track.totalSupply || 0,
+            tokensSold,
+            isActive: track.isTokenized
+          }
+        };
+      }).filter(Boolean) as Investment[];
+
+      // Generate mock royalty payments based on investments
+      const portfolioRoyaltyPayments: RoyaltyPayment[] = portfolioInvestments.flatMap(investment => [
+        {
+          id: `royalty-${investment.id}-1`,
+          trackTitle: investment.trackTitle,
+          amount: investment.royaltiesEarned * 0.6,
+          date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          transactionId: `0x${Math.random().toString(16).substr(2, 8)}...${Math.random().toString(16).substr(2, 4)}`
+        },
+        {
+          id: `royalty-${investment.id}-2`,
+          trackTitle: investment.trackTitle,
+          amount: investment.royaltiesEarned * 0.4,
+          date: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
+          transactionId: `0x${Math.random().toString(16).substr(2, 8)}...${Math.random().toString(16).substr(2, 4)}`
+        }
+      ]);
+
+      setInvestments(portfolioInvestments);
+      setRoyaltyPayments(portfolioRoyaltyPayments);
+    } catch (error) {
+      console.error('Failed to fetch portfolio data:', error);
+      toast.error('Failed to load portfolio data');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const calculatePortfolioStats = () => {
+    const totalInvested = investments.reduce((sum, inv) => sum + inv.totalInvested, 0);
+    const currentValue = investments.reduce((sum, inv) => sum + inv.currentValue, 0);
+    const totalRoyalties = investments.reduce((sum, inv) => sum + inv.royaltiesEarned, 0);
+    const totalGain = currentValue + totalRoyalties - totalInvested;
+    const totalGainPercentage = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0;
+
+    return {
+      totalInvested,
+      currentValue,
+      totalRoyalties,
+      totalGain,
+      totalGainPercentage,
+      activeInvestments: investments.filter(inv => inv.track.isActive).length,
+      totalTokens: investments.reduce((sum, inv) => sum + inv.tokensOwned, 0)
+    };
+  };
+
+  const stats = calculatePortfolioStats();
+
+  if (!connected) {
+    return (
+      <div className="container mx-auto px-4 py-16">
+        <div className="text-center max-w-md mx-auto">
+          <Users className="h-16 w-16 mx-auto text-muted-foreground mb-6" />
+          <h1 className="text-2xl font-bold mb-4">Connect Your Wallet</h1>
+          <p className="text-muted-foreground mb-6">
+            Please connect your wallet to view your investment portfolio.
+          </p>
+          <Button size="lg" disabled>
+            Connect Wallet Required
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
+  if (loading) {
+    return (
+      <div className="container mx-auto px-4 py-16">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
+          <p className="mt-4 text-muted-foreground">Loading your portfolio...</p>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="container mx-auto px-4 py-8">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-3xl font-bold mb-2">Investment Portfolio</h1>
+        <p className="text-muted-foreground">
+          Track your music investments and royalty earnings
+        </p>
+      </div>
+
+      {/* Portfolio Overview */}
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Invested</CardTitle>
+            <DollarSign className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalInvested.toFixed(2)} SOL</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Current Value</CardTitle>
+            <TrendingUp className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.currentValue.toFixed(2)} SOL</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Royalties Earned</CardTitle>
+            <Music className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold">{stats.totalRoyalties.toFixed(2)} SOL</div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+            <CardTitle className="text-sm font-medium">Total Gain/Loss</CardTitle>
+            {stats.totalGain >= 0 ? (
+              <ArrowUpRight className="h-4 w-4 text-green-600" />
+            ) : (
+              <ArrowDownRight className="h-4 w-4 text-red-600" />
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className={`text-2xl font-bold ${
+              stats.totalGain >= 0 ? 'text-green-600' : 'text-red-600'
+            }`}>
+              {stats.totalGain >= 0 ? '+' : ''}{stats.totalGain.toFixed(2)} SOL
+            </div>
+            <p className={`text-xs ${
+              stats.totalGainPercentage >= 0 ? 'text-green-600' : 'text-red-600'
+            }`}>
+              {stats.totalGainPercentage >= 0 ? '+' : ''}{stats.totalGainPercentage.toFixed(1)}%
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Tabs defaultValue="investments" className="space-y-6">
+        <TabsList>
+          <TabsTrigger value="investments">My Investments</TabsTrigger>
+          <TabsTrigger value="royalties">Royalty History</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="investments" className="space-y-6">
+          {investments.length > 0 ? (
+            <div className="grid gap-6">
+              {investments.map((investment) => (
+                <Card key={investment.id}>
+                  <CardHeader>
+                    <div className="flex items-center justify-between">
+                      <div className="space-y-1">
+                        <CardTitle className="text-lg">{investment.trackTitle}</CardTitle>
+                        <CardDescription>by {investment.artistEmail}</CardDescription>
+                      </div>
+                      <Badge variant={investment.track.isActive ? "default" : "secondary"}>
+                        {investment.track.isActive ? "Active" : "Inactive"}
+                      </Badge>
+                    </div>
+                  </CardHeader>
+
+                  <CardContent className="space-y-4">
+                    {/* Investment Summary */}
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                      <div>
+                        <div className="text-sm text-muted-foreground">Tokens Owned</div>
+                        <div className="text-lg font-semibold">{investment.tokensOwned.toLocaleString()}</div>
+                      </div>
+                      <div>
+                        <div className="text-sm text-muted-foreground">Amount Invested</div>
+                        <div className="text-lg font-semibold">{investment.totalInvested.toFixed(2)} SOL</div>
+                      </div>
+                      <div>
+                        <div className="text-sm text-muted-foreground">Current Value</div>
+                        <div className={`text-lg font-semibold ${
+                          investment.currentValue >= investment.totalInvested ? 'text-green-600' : 'text-red-600'
+                        }`}>
+                          {investment.currentValue.toFixed(2)} SOL
+                        </div>
+                      </div>
+                      <div>
+                        <div className="text-sm text-muted-foreground">Royalties Earned</div>
+                        <div className="text-lg font-semibold text-green-600">
+                          +{investment.royaltiesEarned.toFixed(2)} SOL
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Ownership Percentage */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Your Ownership</span>
+                        <span className="font-medium">
+                          {((investment.tokensOwned / investment.track.totalSupply) * 100).toFixed(2)}%
+                        </span>
+                      </div>
+                      <Progress 
+                        value={(investment.tokensOwned / investment.track.totalSupply) * 100} 
+                        className="h-2"
+                      />
+                    </div>
+
+                    {/* Track Funding Progress */}
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span>Track Funding Progress</span>
+                        <span className="font-medium">
+                          {investment.track.tokensSold.toLocaleString()} / {investment.track.totalSupply.toLocaleString()} tokens sold
+                        </span>
+                      </div>
+                      <Progress 
+                        value={(investment.track.tokensSold / investment.track.totalSupply) * 100} 
+                        className="h-2"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between pt-2">
+                      <div className="text-xs text-muted-foreground">
+                        Invested on {new Date(investment.investmentDate).toLocaleDateString()}
+                      </div>
+                      <Button 
+                        variant="outline" 
+                        size="sm"
+                        onClick={() => {
+                          setSelectedInvestment(investment);
+                          setShowDetailsDialog(true);
+                        }}
+                      >
+                        <Eye className="h-4 w-4 mr-1" />
+                        View Details
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-muted/30 rounded-lg">
+              <Music className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No Investments Yet</h3>
+              <p className="text-muted-foreground mb-4">
+                Start investing in tokenized music tracks to build your portfolio
+              </p>
+              <Button asChild>
+                <a href="/marketplace">Explore Marketplace</a>
+              </Button>
+            </div>
+          )}
+        </TabsContent>
+
+        <TabsContent value="royalties" className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Royalty Payment History</CardTitle>
+              <CardDescription>
+                Your earnings from music royalty distributions
+              </CardDescription>
+            </CardHeader>
+
+            <CardContent>
+              {royaltyPayments.length > 0 ? (
+                <div className="space-y-4">
+                  {royaltyPayments.map((payment) => (
+                    <div key={payment.id} className="flex items-center justify-between p-4 border rounded-lg">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-green-100 rounded-full flex items-center justify-center">
+                          <DollarSign className="h-5 w-5 text-green-600" />
+                        </div>
+                        <div>
+                          <div className="font-medium">{payment.trackTitle}</div>
+                          <div className="text-sm text-muted-foreground">
+                            {new Date(payment.date).toLocaleDateString()}
+                          </div>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <div className="font-semibold text-green-600">
+                          +{payment.amount.toFixed(3)} SOL
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {payment.transactionId.slice(0, 6)}...{payment.transactionId.slice(-4)}
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8">
+                  <DollarSign className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
+                  <p className="text-muted-foreground">No royalty payments yet</p>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
+
+      {/* Investment Details Dialog */}
+      <Dialog open={showDetailsDialog} onOpenChange={setShowDetailsDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Investment Details</DialogTitle>
+            <DialogDescription>
+              Detailed information about your investment
+            </DialogDescription>
+          </DialogHeader>
+          
+          {selectedInvestment && (
+            <div className="space-y-6">
+              {/* Track Information */}
+              <div className="bg-muted/30 p-4 rounded-lg">
+                <div className="flex items-center space-x-3 mb-4">
+                  <div className="w-12 h-12 bg-primary/20 rounded-lg flex items-center justify-center">
+                    <Music className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <h3 className="font-semibold text-lg">{selectedInvestment.trackTitle}</h3>
+                    <p className="text-sm text-muted-foreground">by {selectedInvestment.artistEmail}</p>
+                  </div>
+                  <Badge variant={selectedInvestment.track.isActive ? "default" : "secondary"}>
+                    {selectedInvestment.track.isActive ? "Active" : "Inactive"}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Investment Summary */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <div className="text-center p-4 bg-muted/30 rounded-lg">
+                  <div className="text-2xl font-bold text-primary">{selectedInvestment.tokensOwned.toLocaleString()}</div>
+                  <div className="text-sm text-muted-foreground">Tokens Owned</div>
+                </div>
+                <div className="text-center p-4 bg-muted/30 rounded-lg">
+                  <div className="text-2xl font-bold">{selectedInvestment.totalInvested.toFixed(2)} SOL</div>
+                  <div className="text-sm text-muted-foreground">Total Invested</div>
+                </div>
+                <div className="text-center p-4 bg-muted/30 rounded-lg">
+                  <div className={`text-2xl font-bold ${
+                    selectedInvestment.currentValue >= selectedInvestment.totalInvested ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {selectedInvestment.currentValue.toFixed(2)} SOL
+                  </div>
+                  <div className="text-sm text-muted-foreground">Current Value</div>
+                </div>
+                <div className="text-center p-4 bg-muted/30 rounded-lg">
+                  <div className="text-2xl font-bold text-green-600">
+                    +{selectedInvestment.royaltiesEarned.toFixed(3)} SOL
+                  </div>
+                  <div className="text-sm text-muted-foreground">Royalties Earned</div>
+                </div>
+              </div>
+
+              {/* Performance Metrics */}
+              <div className="space-y-4">
+                <h4 className="font-semibold">Performance Metrics</h4>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Your Ownership</span>
+                      <span className="font-medium">
+                        {((selectedInvestment.tokensOwned / selectedInvestment.track.totalSupply) * 100).toFixed(2)}%
+                      </span>
+                    </div>
+                    <Progress 
+                      value={(selectedInvestment.tokensOwned / selectedInvestment.track.totalSupply) * 100} 
+                      className="h-2"
+                    />
+                  </div>
+
+                  <div className="space-y-2">
+                    <div className="flex justify-between text-sm">
+                      <span>Funding Progress</span>
+                      <span className="font-medium">
+                        {((selectedInvestment.track.tokensSold / selectedInvestment.track.totalSupply) * 100).toFixed(1)}%
+                      </span>
+                    </div>
+                    <Progress 
+                      value={(selectedInvestment.track.tokensSold / selectedInvestment.track.totalSupply) * 100} 
+                      className="h-2"
+                    />
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <div className="text-muted-foreground">Investment Date</div>
+                    <div className="font-medium">{new Date(selectedInvestment.investmentDate).toLocaleDateString()}</div>
+                  </div>
+                  <div>
+                    <div className="text-muted-foreground">Price per Token</div>
+                    <div className="font-medium">{selectedInvestment.pricePerToken.toFixed(3)} SOL</div>
+                  </div>
+                </div>
+
+                <div className="bg-muted/30 p-4 rounded-lg">
+                  <div className="text-sm text-muted-foreground mb-2">Total Return</div>
+                  <div className={`text-xl font-bold ${
+                    (selectedInvestment.currentValue + selectedInvestment.royaltiesEarned - selectedInvestment.totalInvested) >= 0 
+                      ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {(selectedInvestment.currentValue + selectedInvestment.royaltiesEarned - selectedInvestment.totalInvested) >= 0 ? '+' : ''}
+                    {(selectedInvestment.currentValue + selectedInvestment.royaltiesEarned - selectedInvestment.totalInvested).toFixed(3)} SOL
+                  </div>
+                  <div className={`text-sm ${
+                    (selectedInvestment.currentValue + selectedInvestment.royaltiesEarned - selectedInvestment.totalInvested) >= 0 
+                      ? 'text-green-600' : 'text-red-600'
+                  }`}>
+                    {(((selectedInvestment.currentValue + selectedInvestment.royaltiesEarned - selectedInvestment.totalInvested) / selectedInvestment.totalInvested) * 100).toFixed(1)}% return
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}

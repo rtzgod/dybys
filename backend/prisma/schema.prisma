@@ -1,0 +1,68 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String   @id @default(uuid())
+  walletAddress String   @unique
+  email         String   @unique
+  role          UserRole
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  tracks      Track[]
+  investments Investment[]
+
+  @@map("users")
+}
+
+model Track {
+  id            String   @id @default(uuid())
+  title         String
+  artistId      String
+  fileUrl       String
+  metadata      Json?
+  tokenMint     String?  // Solana token mint address
+  totalSupply   Int?
+  pricePerToken Float?
+  royaltyPercentage Int @default(1000) // basis points, 1000 = 10%
+  isTokenized   Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  artist      User           @relation(fields: [artistId], references: [id])
+  investments Investment[]
+
+  @@map("tracks")
+}
+
+model Investment {
+  id            String   @id @default(uuid())
+  investorId    String
+  trackId       String
+  amount        Int      // quantity of tokens
+  purchasePrice Float    // price paid per token
+  totalPaid     Float    // total amount paid
+  createdAt     DateTime @default(now())
+
+  // Relations
+  investor User  @relation(fields: [investorId], references: [id])
+  track    Track @relation(fields: [trackId], references: [id])
+
+  @@map("investments")
+}
+
+enum UserRole {
+  ARTIST
+  INVESTOR
+}
