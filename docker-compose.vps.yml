@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dybys
+      POSTGRES_PASSWORD: dybys123
+      POSTGRES_DB: dybys
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - dybys-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dybys"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://dybys:dybys123@postgres:5432/dybys
+      JWT_SECRET: your-super-secret-jwt-key-change-this
+      PORT: 5000
+      SOLANA_RPC_URL: https://api.devnet.solana.com
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dybys-network
+    volumes:
+      - backend_uploads:/app/uploads
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_SOLANA_RPC: https://api.devnet.solana.com
+      NEXT_PUBLIC_API_URL: http://dybys.me:5000
+      NEXT_PUBLIC_PROGRAM_ID: FPZCujxx2DPXL2rURe2yqvTKMwzJWcVmaDmq4MRQAhQ
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    networks:
+      - dybys-network
+
+volumes:
+  postgres_data:
+    driver: local
+  backend_uploads:
+    driver: local
+
+networks:
+  dybys-network:
+    driver: bridge
