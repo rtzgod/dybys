@@ -6,16 +6,13 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Slider } from '@/components/ui/slider';
 import { Label } from '@/components/ui/label';
 import { Search, Filter, TrendingUp } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import useAppStore from '@/lib/store';
-
-// Simple toast replacement
-const toast = {
-  success: (message: string) => alert(`Success: ${message}`),
-  error: (message: string) => alert(`Error: ${message}`)
-};
+import { toast } from 'sonner';
 
 interface Track {
   id: string;
@@ -42,6 +39,10 @@ export default function MarketplacePage() {
   const [selectedTrack, setSelectedTrack] = useState<Track | null>(null);
   const [investAmount, setInvestAmount] = useState('');
   const [isInvesting, setIsInvesting] = useState(false);
+  const [showFilters, setShowFilters] = useState(false);
+  const [selectedGenre, setSelectedGenre] = useState<string>('all');
+  const [priceRange, setPriceRange] = useState([0, 1]);
+  const [sortBy, setSortBy] = useState<string>('newest');
   const { connected, publicKey } = useWallet();
   const { tracks: storeTracks, addInvestment } = useAppStore();
 
@@ -51,78 +52,6 @@ export default function MarketplacePage() {
     setLoading(false);
   }, [storeTracks]);
 
-  const fetchTracks = async () => {
-    try {
-      // In a real app, this would fetch from your API
-      // For now, using mock data
-      const mockTracks: Track[] = [
-        {
-          id: '1',
-          title: 'Digital Dreams',
-          artist: {
-            email: 'artist1@example.com',
-            walletAddress: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
-          },
-          fileUrl: '/audio/track1.mp3',
-          isTokenized: true,
-          totalSupply: 1000,
-          pricePerToken: 0.1,
-          investments: [
-            { investorId: 'inv1', amount: 100, totalPaid: 10 },
-            { investorId: 'inv2', amount: 150, totalPaid: 15 }
-          ]
-        },
-        {
-          id: '2',
-          title: 'Neon Nights',
-          artist: {
-            email: 'artist2@example.com',
-            walletAddress: '8VfDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
-          },
-          fileUrl: '/audio/track2.mp3',
-          isTokenized: true,
-          totalSupply: 500,
-          pricePerToken: 0.2,
-          investments: [
-            { investorId: 'inv3', amount: 50, totalPaid: 10 }
-          ]
-        },
-        {
-          id: '3',
-          title: 'Cosmic Journey',
-          artist: {
-            email: 'artist3@example.com',
-            walletAddress: '7UeDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
-          },
-          fileUrl: '/audio/track3.mp3',
-          isTokenized: true,
-          totalSupply: 2000,
-          pricePerToken: 0.05,
-          investments: []
-        },
-        {
-          id: '4',
-          title: 'Urban Pulse',
-          artist: {
-            email: 'artist4@example.com',
-            walletAddress: '6TdDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
-          },
-          fileUrl: '/audio/track4.mp3',
-          isTokenized: false,
-          totalSupply: undefined,
-          pricePerToken: undefined,
-          investments: []
-        }
-      ];
-
-      setTracks(mockTracks);
-    } catch (error) {
-      console.error('Failed to fetch tracks:', error);
-      toast.error('Failed to load tracks');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const handleInvest = (trackId: string) => {
     if (!connected) {
@@ -145,8 +74,16 @@ export default function MarketplacePage() {
       const amount = parseInt(investAmount);
       const totalCost = amount * (selectedTrack.pricePerToken || 0);
 
+      // Show loading toast
+      const loadingToast = toast.loading('Processing investment...', {
+        description: 'Please wait while we process your transaction on the Solana blockchain.'
+      });
+
       // Simulate blockchain transaction
       await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Dismiss loading toast
+      toast.dismiss(loadingToast);
 
       // Add investment to store
       addInvestment({
@@ -156,7 +93,9 @@ export default function MarketplacePage() {
         totalPaid: totalCost
       });
 
-      toast.success(`Successfully invested ${totalCost.toFixed(3)} SOL in ${selectedTrack.title}!`);
+      toast.success(`Successfully invested ${totalCost.toFixed(3)} SOL in "${selectedTrack.title}"!`, {
+        description: `You now own ${amount} tokens and will receive royalty distributions.`
+      });
       setSelectedTrack(null);
       setInvestAmount('');
       
@@ -168,13 +107,46 @@ export default function MarketplacePage() {
     }
   };
 
-  const filteredTracks = tracks.filter(track =>
-    track.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    track.artist.email.toLowerCase().includes(searchTerm.toLowerCase())
-  );
+  // Get unique genres for filter options
+  const availableGenres = Array.from(new Set(tracks.map(track => track.genre).filter(Boolean)));
 
-  const tokenizedTracks = filteredTracks.filter(track => track.isTokenized);
-  const availableForTokenization = filteredTracks.filter(track => !track.isTokenized);
+  // Apply filters
+  const filteredTracks = tracks.filter(track => {
+    // Search filter
+    const matchesSearch = track.title.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         track.artist.email.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         (track.genre && track.genre.toLowerCase().includes(searchTerm.toLowerCase()));
+    
+    // Genre filter
+    const matchesGenre = selectedGenre === 'all' || track.genre === selectedGenre;
+    
+    // Price range filter
+    const matchesPrice = !track.pricePerToken || 
+                        (track.pricePerToken >= priceRange[0] && track.pricePerToken <= priceRange[1]);
+    
+    return matchesSearch && matchesGenre && matchesPrice;
+  });
+
+  // Sort tracks
+  const sortedTracks = [...filteredTracks].sort((a, b) => {
+    switch (sortBy) {
+      case 'newest':
+        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+      case 'oldest':
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      case 'price-low':
+        return (a.pricePerToken || 0) - (b.pricePerToken || 0);
+      case 'price-high':
+        return (b.pricePerToken || 0) - (a.pricePerToken || 0);
+      case 'title':
+        return a.title.localeCompare(b.title);
+      default:
+        return 0;
+    }
+  });
+
+  const tokenizedTracks = sortedTracks.filter(track => track.isTokenized);
+  const availableForTokenization = sortedTracks.filter(track => !track.isTokenized);
 
   return (
     <div className="container mx-auto px-4 py-8">
@@ -197,10 +169,99 @@ export default function MarketplacePage() {
             className="pl-9"
           />
         </div>
-        <Button variant="outline" className="sm:w-auto">
-          <Filter className="h-4 w-4 mr-2" />
-          Filters
-        </Button>
+        <Dialog open={showFilters} onOpenChange={setShowFilters}>
+          <DialogTrigger asChild>
+            <Button variant="outline" className="sm:w-auto">
+              <Filter className="h-4 w-4 mr-2" />
+              Filters
+              {(selectedGenre !== 'all' || sortBy !== 'newest') && (
+                <Badge variant="secondary" className="ml-2 h-4 px-1 text-xs">
+                  {[selectedGenre !== 'all' ? 1 : 0, sortBy !== 'newest' ? 1 : 0].reduce((a, b) => a + b)}
+                </Badge>
+              )}
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="sm:max-w-md">
+            <DialogHeader>
+              <DialogTitle>Filter Tracks</DialogTitle>
+              <DialogDescription>
+                Refine your search with genre, price, and sorting options
+              </DialogDescription>
+            </DialogHeader>
+            
+            <div className="space-y-6">
+              {/* Genre Filter */}
+              <div className="space-y-2">
+                <Label htmlFor="genre-select">Genre</Label>
+                <Select value={selectedGenre} onValueChange={setSelectedGenre}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select genre" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Genres</SelectItem>
+                    {availableGenres.map((genre) => (
+                      <SelectItem key={genre} value={genre}>
+                        {genre}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Price Range */}
+              <div className="space-y-3">
+                <Label>Price Range (SOL)</Label>
+                <div className="px-3">
+                  <Slider
+                    value={priceRange}
+                    onValueChange={setPriceRange}
+                    max={1}
+                    min={0}
+                    step={0.01}
+                    className="w-full"
+                  />
+                  <div className="flex justify-between text-sm text-muted-foreground mt-1">
+                    <span>{priceRange[0].toFixed(2)} SOL</span>
+                    <span>{priceRange[1].toFixed(2)} SOL</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Sort By */}
+              <div className="space-y-2">
+                <Label htmlFor="sort-select">Sort By</Label>
+                <Select value={sortBy} onValueChange={setSortBy}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Sort by" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="newest">Newest First</SelectItem>
+                    <SelectItem value="oldest">Oldest First</SelectItem>
+                    <SelectItem value="price-low">Price: Low to High</SelectItem>
+                    <SelectItem value="price-high">Price: High to Low</SelectItem>
+                    <SelectItem value="title">Title (A-Z)</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            <DialogFooter className="sm:justify-between">
+              <Button 
+                variant="outline" 
+                onClick={() => {
+                  setSelectedGenre('all');
+                  setPriceRange([0, 1]);
+                  setSortBy('newest');
+                }}
+              >
+                Clear All
+              </Button>
+              <Button onClick={() => setShowFilters(false)}>
+                Apply Filters
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       </div>
 
       {/* Statistics */}

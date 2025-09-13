@@ -5,6 +5,9 @@ import { TrackCard } from '@/components/TrackCard';
 import { Button } from '@/components/ui/button';
 import { Music, TrendingUp, Users, DollarSign } from 'lucide-react';
 import Link from 'next/link';
+import useAppStore from '@/lib/store';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { toast } from 'sonner';
 
 interface Track {
   id: string;
@@ -21,53 +24,36 @@ interface Track {
 }
 
 export default function Home() {
-  const [tracks, setTracks] = useState<Track[]>([]);
   const [loading, setLoading] = useState(true);
+  const { connected } = useWallet();
+  const { tracks, addInvestment } = useAppStore();
 
   useEffect(() => {
-    // Mock data for now - in real app this would fetch from API
-    const mockTracks: Track[] = [
-      {
-        id: '1',
-        title: 'Digital Dreams',
-        artist: {
-          email: 'artist1@example.com',
-          walletAddress: '9WzDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
-        },
-        fileUrl: '/audio/track1.mp3',
-        isTokenized: true,
-        totalSupply: 1000,
-        pricePerToken: 0.1,
-        investments: [
-          { investorId: 'inv1', amount: 100, totalPaid: 10 },
-          { investorId: 'inv2', amount: 150, totalPaid: 15 }
-        ]
-      },
-      {
-        id: '2',
-        title: 'Neon Nights',
-        artist: {
-          email: 'artist2@example.com',
-          walletAddress: '8VfDXwBbmkg8ZTbNMqUxvQRAyrZzDsGYdLVL9zYtAWWM'
-        },
-        fileUrl: '/audio/track2.mp3',
-        isTokenized: true,
-        totalSupply: 500,
-        pricePerToken: 0.2,
-        investments: [
-          { investorId: 'inv3', amount: 50, totalPaid: 10 }
-        ]
-      }
-    ];
+    // Simulate loading time
+    const timer = setTimeout(() => {
+      setLoading(false);
+    }, 500);
 
-    setTracks(mockTracks);
-    setLoading(false);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleInvest = (trackId: string) => {
-    // This would open the investment modal
-    console.log('Invest in track:', trackId);
+    if (!connected) {
+      toast.error('Please connect your wallet first');
+      return;
+    }
+    // Navigate to marketplace with the specific track
+    window.location.href = `/marketplace?track=${trackId}`;
   };
+
+  const tokenizedTracks = tracks.filter(track => track.isTokenized);
+  const totalInvested = tracks.reduce((sum, track) => {
+    const trackInvestments = track.investments?.reduce((s, inv) => s + inv.totalPaid, 0) || 0;
+    return sum + trackInvestments;
+  }, 0);
+  const uniqueInvestors = new Set(tracks.flatMap(track => 
+    track.investments?.map(inv => inv.investorId) || []
+  )).size;
 
   return (
     <div className="min-h-screen">
@@ -76,13 +62,14 @@ export default function Home() {
         <div className="container mx-auto px-4 sm:px-6 lg:px-8">
           <div className="text-center space-y-6">
             <h1 className="text-4xl md:text-6xl font-bold tracking-tight">
-              Tokenize Your Music,
+              Welcome to 
+              <span className="text-primary"> dybys</span>
               <br />
-              <span className="text-primary">Unlock Your Future</span>
+              <span className="text-2xl md:text-4xl text-muted-foreground">Tokenize Your Music</span>
             </h1>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
-              Artists tokenize their tracks, investors fund the next big hits. 
-              Join the decentralized music revolution on Solana.
+              The decentralized music platform where artists tokenize tracks and investors fund the next big hits. 
+              Built on Solana blockchain for transparent royalty sharing.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button asChild size="lg" className="px-8">
@@ -109,23 +96,23 @@ export default function Home() {
             <div className="text-center space-y-2">
               <div className="text-3xl font-bold text-primary">
                 <Music className="w-8 h-8 mx-auto mb-2" />
-                {tracks.length}
+                {tokenizedTracks.length}
               </div>
-              <div className="text-sm text-muted-foreground">Tracks Available</div>
+              <div className="text-sm text-muted-foreground">Tokenized Tracks</div>
             </div>
             <div className="text-center space-y-2">
               <div className="text-3xl font-bold text-primary">
                 <Users className="w-8 h-8 mx-auto mb-2" />
-                50+
+                {uniqueInvestors}
               </div>
-              <div className="text-sm text-muted-foreground">Active Users</div>
+              <div className="text-sm text-muted-foreground">Active Investors</div>
             </div>
             <div className="text-center space-y-2">
               <div className="text-3xl font-bold text-primary">
                 <DollarSign className="w-8 h-8 mx-auto mb-2" />
-                $25k
+                {totalInvested.toFixed(1)} SOL
               </div>
-              <div className="text-sm text-muted-foreground">Total Raised</div>
+              <div className="text-sm text-muted-foreground">Total Invested</div>
             </div>
           </div>
         </div>
@@ -151,15 +138,27 @@ export default function Home() {
               <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary mx-auto"></div>
               <p className="mt-4 text-muted-foreground">Loading tracks...</p>
             </div>
-          ) : (
+          ) : tokenizedTracks.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {tracks.slice(0, 6).map((track) => (
+              {tokenizedTracks.slice(0, 6).map((track) => (
                 <TrackCard
                   key={track.id}
                   track={track}
                   onInvest={handleInvest}
+                  showInvestButton={true}
                 />
               ))}
+            </div>
+          ) : (
+            <div className="text-center py-12 bg-muted/30 rounded-lg">
+              <Music className="h-12 w-12 mx-auto text-muted-foreground mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No Tracks Available Yet</h3>
+              <p className="text-muted-foreground mb-4">
+                Be the first to upload and tokenize a track!
+              </p>
+              <Button asChild>
+                <Link href="/artist/upload">Upload Your First Track</Link>
+              </Button>
             </div>
           )}
         </div>

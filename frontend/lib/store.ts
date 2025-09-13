@@ -60,36 +60,7 @@ const useAppStore = create<AppState>()(
     (set, get) => ({
       // Initial state
       currentUser: null,
-      tracks: [
-        // Some initial demo tracks
-        {
-          id: 'demo-1',
-          title: 'Digital Dreams',
-          description: 'An electronic journey through digital landscapes',
-          genre: 'Electronic',
-          artist: {
-            email: 'demo-artist@example.com',
-            walletAddress: 'DemoArtist1234567890123456789012345678901'
-          },
-          fileUrl: '/demo-track.mp3',
-          isTokenized: true,
-          totalSupply: 1000,
-          pricePerToken: 0.1,
-          royaltyPercentage: 1000,
-          tokenMint: 'TokenMint123456789012345678901234567890',
-          investments: [
-            {
-              id: 'demo-inv-1',
-              investorId: 'DemoInvestor123456789012345678901234567',
-              trackId: 'demo-1',
-              amount: 100,
-              totalPaid: 10,
-              createdAt: '2024-01-15T00:00:00Z'
-            }
-          ],
-          createdAt: '2024-01-10T00:00:00Z'
-        }
-      ],
+      tracks: [],
       investments: [],
 
       // Actions

@@ -10,12 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { TrendingUp, DollarSign, Music, Users, ArrowUpRight, ArrowDownRight, Eye } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import useAppStore from '@/lib/store';
-
-// Simple toast replacement
-const toast = {
-  success: (message: string) => alert(`Success: ${message}`),
-  error: (message: string) => alert(`Error: ${message}`)
-};
+import { toast } from 'sonner';
 
 interface Investment {
   id: string;

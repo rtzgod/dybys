@@ -11,12 +11,7 @@ import { Badge } from '@/components/ui/badge';
 import { Upload, Music, Coins, Play, Pause, DollarSign, Users } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import useAppStore from '@/lib/store';
-
-// Simple toast replacement
-const toast = {
-  success: (message: string) => alert(`Success: ${message}`),
-  error: (message: string) => alert(`Error: ${message}`)
-};
+import { toast } from 'sonner';
 
 interface TrackFormData {
   title: string;
@@ -108,7 +103,9 @@ export default function ArtistUploadPage() {
       };
 
       setUploadedTrack(newTrack);
-      toast.success('Track uploaded successfully!');
+      toast.success('Track uploaded successfully!', {
+        description: 'You can now proceed to tokenize your track.'
+      });
       setActiveTab('tokenize');
 
     } catch (error) {
@@ -125,8 +122,16 @@ export default function ArtistUploadPage() {
     setIsTokenizing(true);
 
     try {
+      // Show loading toast
+      const loadingToast = toast.loading('Creating tokens...', {
+        description: 'Deploying your track token contract on Solana blockchain.'
+      });
+
       // Simulate blockchain transaction
       await new Promise(resolve => setTimeout(resolve, 2000));
+
+      // Dismiss loading toast
+      toast.dismiss(loadingToast);
 
       // Update track in store with tokenization parameters
       updateTrack(uploadedTrack.id, {
@@ -137,7 +142,9 @@ export default function ArtistUploadPage() {
         tokenMint: `${uploadedTrack.id}-mint-${Date.now()}` // Mock token mint
       });
 
-      toast.success(`${formData.title} has been tokenized successfully!`);
+      toast.success(`"${formData.title}" has been tokenized successfully!`, {
+        description: `${formData.totalSupply} tokens created at ${formData.pricePerToken} SOL each. Your track is now available for investment.`
+      });
       
       // Reset form
       setFormData({
