@@ -1,0 +1,102 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: dybys
+      POSTGRES_PASSWORD: dybys123
+      POSTGRES_DB: dybys
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - dybys-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dybys"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Solana Test Validator
+  solana-validator:
+    image: solanalabs/solana:stable
+    restart: unless-stopped
+    command: >
+      sh -c "
+        solana-test-validator 
+        --reset 
+        --quiet 
+        --bind-address 0.0.0.0 
+        --rpc-bind-address 0.0.0.0 
+        --faucet-sol 1000000
+      "
+    ports:
+      - "8899:8899"  # RPC
+      - "8900:8900"  # WebSocket
+      - "9900:9900"  # Faucet
+    networks:
+      - dybys-network
+    volumes:
+      - solana_data:/root/.config/solana
+    healthcheck:
+      test: ["CMD", "solana", "cluster-version", "--url", "http://localhost:8899"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  # Backend API
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://dybys:dybys123@postgres:5432/dybys
+      JWT_SECRET: your-super-secret-jwt-key-here
+      PORT: 5000
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - dybys-network
+    volumes:
+      - backend_uploads:/app/uploads
+
+  # Frontend
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_SOLANA_RPC: http://localhost:8899
+      NEXT_PUBLIC_API_URL: http://localhost:5000
+      NEXT_PUBLIC_PROGRAM_ID: FPZCujxx2DPXL2rURe2yqvTKMwzJWcVmaDmq4MRQAhQ
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+      - solana-validator
+    networks:
+      - dybys-network
+
+volumes:
+  postgres_data:
+    driver: local
+  solana_data:
+    driver: local
+  backend_uploads:
+    driver: local
+
+networks:
+  dybys-network:
+    driver: bridge
