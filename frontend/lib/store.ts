@@ -31,6 +31,18 @@ export interface Investment {
   createdAt: string;
 }
 
+export interface RoyaltyDistribution {
+  id: string;
+  trackId: string;
+  artistId: string;
+  totalAmount: number;
+  perTokenAmount: number;
+  description: string;
+  distributionDate: string;
+  totalTokensEligible: number;
+  uniqueInvestors: number;
+}
+
 export interface User {
   walletAddress: string;
   email: string;
@@ -53,6 +65,12 @@ interface AppState {
   addInvestment: (investment: Omit<Investment, 'id' | 'createdAt'>) => void;
   getInvestmentsByInvestor: (walletAddress: string) => Investment[];
   getInvestmentsByTrack: (trackId: string) => Investment[];
+
+  // Royalty distributions state
+  royaltyDistributions: RoyaltyDistribution[];
+  addRoyaltyDistribution: (distribution: Omit<RoyaltyDistribution, 'id'>) => void;
+  getRoyaltyDistributionsByTrack: (trackId: string) => RoyaltyDistribution[];
+  getRoyaltyDistributionsByArtist: (artistId: string) => RoyaltyDistribution[];
 }
 
 const useAppStore = create<AppState>()(
@@ -62,6 +80,7 @@ const useAppStore = create<AppState>()(
       currentUser: null,
       tracks: [],
       investments: [],
+      royaltyDistributions: [],
 
       // Actions
       setCurrentUser: (user) => set({ currentUser: user }),
@@ -129,6 +148,25 @@ const useAppStore = create<AppState>()(
 
       getInvestmentsByTrack: (trackId) => {
         return get().investments.filter(inv => inv.trackId === trackId);
+      },
+
+      addRoyaltyDistribution: (distributionData) => {
+        const distribution: RoyaltyDistribution = {
+          ...distributionData,
+          id: `royalty-${Date.now()}`
+        };
+
+        set((state) => ({
+          royaltyDistributions: [...state.royaltyDistributions, distribution]
+        }));
+      },
+
+      getRoyaltyDistributionsByTrack: (trackId) => {
+        return get().royaltyDistributions.filter(dist => dist.trackId === trackId);
+      },
+
+      getRoyaltyDistributionsByArtist: (artistId) => {
+        return get().royaltyDistributions.filter(dist => dist.artistId === artistId);
       }
     }),
     {
@@ -136,6 +174,7 @@ const useAppStore = create<AppState>()(
       partialize: (state) => ({
         tracks: state.tracks,
         investments: state.investments,
+        royaltyDistributions: state.royaltyDistributions,
         currentUser: state.currentUser
       })
     }

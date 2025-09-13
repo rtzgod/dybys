@@ -4,13 +4,14 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { WalletConnect } from './WalletConnect';
 import { ClientOnly } from './ClientOnly';
-import { Music, TrendingUp, User, Upload } from 'lucide-react';
+import { Music, TrendingUp, User, Upload, Settings } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navigation = [
   { name: 'Home', href: '/', icon: Music },
   { name: 'Marketplace', href: '/marketplace', icon: TrendingUp },
   { name: 'Upload', href: '/artist/upload', icon: Upload },
+  { name: 'Dashboard', href: '/artist/dashboard', icon: Settings },
   { name: 'Portfolio', href: '/investor/portfolio', icon: User },
 ];
 

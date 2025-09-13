@@ -77,6 +77,7 @@ export default function ArtistUploadPage() {
 
     try {
       // Create file URL (in real app, upload to IPFS/cloud storage)
+      // For now, use the browser's object URL for the uploaded file
       const fileUrl = URL.createObjectURL(formData.audioFile);
       
       // Add track to store

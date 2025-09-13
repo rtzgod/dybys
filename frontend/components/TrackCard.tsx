@@ -4,8 +4,11 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Button } from './ui/button';
 import { Badge } from './ui/badge';
 import { Progress } from './ui/progress';
-import { Play, TrendingUp, User } from 'lucide-react';
-import { useState } from 'react';
+import { Play, TrendingUp, User, Pause } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { useWallet } from '@solana/wallet-adapter-react';
+import { toast } from 'sonner';
+import { audioManager } from '@/lib/audioManager';
 
 interface Track {
   id: string;
@@ -30,15 +33,92 @@ interface TrackCardProps {
 
 export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCardProps) {
   const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const { connected, publicKey } = useWallet();
 
   const tokensSold = track.investments?.reduce((sum, inv) => sum + inv.amount, 0) || 0;
   const totalSupply = track.totalSupply || 0;
   const progressPercentage = totalSupply > 0 ? (tokensSold / totalSupply) * 100 : 0;
   const totalRaised = track.investments?.reduce((sum, inv) => sum + inv.totalPaid, 0) || 0;
+  
+  // Check if the current user is the artist of this track
+  const isOwnTrack = Boolean(connected && publicKey && track.artist.walletAddress === publicKey.toString());
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const handleTimeUpdate = () => {
+      setCurrentTime(audio.currentTime);
+    };
+
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+
+    const handleLoadedMetadata = () => {
+      setDuration(audio.duration || 0);
+    };
+
+    audio.addEventListener('timeupdate', handleTimeUpdate);
+    audio.addEventListener('ended', handleEnded);
+    audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+
+    return () => {
+      audio.removeEventListener('timeupdate', handleTimeUpdate);
+      audio.removeEventListener('ended', handleEnded);
+      audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+    };
+  }, []);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (isPlaying) {
+        audioManager.stopCurrent();
+      }
+    };
+  }, []);
 
   const handlePlay = () => {
-    // In a real app, this would play the audio
-    setIsPlaying(!isPlaying);
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    if (isPlaying) {
+      audioManager.pause();
+      setIsPlaying(false);
+    } else {
+      audioManager.play(audio, setIsPlaying).then(() => {
+        setIsPlaying(true);
+      }).catch((error) => {
+        console.error('Audio play failed:', error);
+        // Show a toast for missing audio files
+        if (error.name === 'NotSupportedError' || error.name === 'NotAllowedError') {
+          toast.error('Audio preview not available', {
+            description: 'File may be missing or format not supported'
+          });
+        }
+        setIsPlaying(false);
+      });
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    
+    const newTime = Number(e.target.value);
+    audio.currentTime = newTime;
+    setCurrentTime(newTime);
   };
 
   return (
@@ -59,23 +139,55 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
       </CardHeader>
 
       <CardContent className="space-y-4">
-        {/* Audio Player Placeholder */}
-        <div className="flex items-center gap-3 p-3 bg-muted/30 rounded-lg">
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={handlePlay}
-            className="w-8 h-8 p-0"
-          >
-            <Play className={`w-4 h-4 ${isPlaying ? 'animate-pulse' : ''}`} />
-          </Button>
-          <div className="flex-1">
-            <div className="text-sm font-medium">{track.title}</div>
-            <div className="text-xs text-muted-foreground">
-              Click to {isPlaying ? 'pause' : 'play'}
+        {/* Audio Player */}
+        <div className="space-y-3 p-3 bg-muted/30 rounded-lg">
+          <div className="flex items-center gap-3">
+            <Button
+              size="sm"
+              variant="ghost"
+              onClick={handlePlay}
+              className="w-8 h-8 p-0"
+            >
+              {isPlaying ? (
+                <Pause className="w-4 h-4" />
+              ) : (
+                <Play className="w-4 h-4" />
+              )}
+            </Button>
+            <div className="flex-1 space-y-1">
+              <div className="flex justify-between text-xs">
+                <span className="font-medium">🎵 Audio Preview</span>
+                <span className="text-muted-foreground">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </span>
+              </div>
+              <div className="relative">
+                <Progress 
+                  value={duration > 0 ? (currentTime / duration) * 100 : 0} 
+                  className="h-2"
+                />
+                {duration > 0 && (
+                  <input
+                    type="range"
+                    min={0}
+                    max={duration}
+                    step={0.1}
+                    value={currentTime}
+                    onChange={handleSeek}
+                    className="absolute inset-0 w-full h-2 bg-transparent appearance-none cursor-pointer opacity-0 hover:opacity-100"
+                  />
+                )}
+              </div>
             </div>
           </div>
         </div>
+
+        {/* Hidden audio element */}
+        <audio
+          ref={audioRef}
+          src={track.fileUrl}
+          preload="metadata"
+        />
 
         {track.isTokenized && (
           <>
@@ -113,9 +225,11 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
               <Button 
                 onClick={() => onInvest(track.id)}
                 className="w-full"
-                disabled={tokensSold >= totalSupply}
+                disabled={tokensSold >= totalSupply || isOwnTrack}
               >
-                {tokensSold >= totalSupply ? (
+                {isOwnTrack ? (
+                  'Your Track'
+                ) : tokensSold >= totalSupply ? (
                   'Fully Funded'
                 ) : (
                   <>

@@ -12,6 +12,8 @@ import { toast } from 'sonner';
 interface Track {
   id: string;
   title: string;
+  description?: string;
+  genre?: string;
   artist: {
     email: string;
     walletAddress: string;
@@ -20,12 +22,13 @@ interface Track {
   isTokenized: boolean;
   totalSupply?: number;
   pricePerToken?: number;
+  createdAt: string;
   investments?: any[];
 }
 
 export default function Home() {
   const [loading, setLoading] = useState(true);
-  const { connected } = useWallet();
+  const { connected, publicKey } = useWallet();
   const { tracks, addInvestment } = useAppStore();
 
   useEffect(() => {
@@ -42,6 +45,14 @@ export default function Home() {
       toast.error('Please connect your wallet first');
       return;
     }
+    
+    // Check if user is trying to invest in their own track
+    const track = tracks.find(t => t.id === trackId);
+    if (track && publicKey && track.artist.walletAddress === publicKey.toString()) {
+      toast.error('You cannot invest in your own track');
+      return;
+    }
+    
     // Navigate to marketplace with the specific track
     window.location.href = `/marketplace?track=${trackId}`;
   };

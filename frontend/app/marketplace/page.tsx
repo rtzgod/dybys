@@ -17,6 +17,8 @@ import { toast } from 'sonner';
 interface Track {
   id: string;
   title: string;
+  description?: string;
+  genre?: string;
   artist: {
     email: string;
     walletAddress: string;
@@ -25,6 +27,7 @@ interface Track {
   isTokenized: boolean;
   totalSupply?: number;
   pricePerToken?: number;
+  createdAt: string;
   investments?: Array<{
     investorId: string;
     amount: number;
@@ -61,12 +64,25 @@ export default function MarketplacePage() {
     
     const track = tracks.find(t => t.id === trackId);
     if (track) {
+      // Check if user is trying to invest in their own track
+      if (publicKey && track.artist.walletAddress === publicKey.toString()) {
+        toast.error('You cannot invest in your own track');
+        return;
+      }
+      
       setSelectedTrack(track);
     }
   };
 
   const processInvestment = async () => {
     if (!selectedTrack || !investAmount || !publicKey) return;
+
+    // Double-check that user is not investing in their own track
+    if (selectedTrack.artist.walletAddress === publicKey.toString()) {
+      toast.error('You cannot invest in your own track');
+      setSelectedTrack(null);
+      return;
+    }
 
     setIsInvesting(true);
     
@@ -108,7 +124,7 @@ export default function MarketplacePage() {
   };
 
   // Get unique genres for filter options
-  const availableGenres = Array.from(new Set(tracks.map(track => track.genre).filter(Boolean)));
+  const availableGenres = Array.from(new Set(tracks.map(track => track.genre).filter(Boolean))) as string[];
 
   // Apply filters
   const filteredTracks = tracks.filter(track => {
