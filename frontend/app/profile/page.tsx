@@ -58,21 +58,10 @@ export default function ProfilePage() {
   });
 
   const { connected, publicKey } = useWallet();
-  const { currentUser, updateUserProfile, setCurrentUser } = useAppStore();
+  const { currentUser, updateUserProfile } = useAppStore();
 
   useEffect(() => {
-    if (connected && publicKey && !currentUser) {
-      // Initialize user if not exists
-      const newUser = {
-        walletAddress: publicKey.toString(),
-        email: '',
-        role: 'ARTIST' as 'ARTIST' | 'INVESTOR',
-        joinDate: new Date().toISOString(),
-        profileCompleteness: 0
-      };
-      setCurrentUser(newUser);
-    }
-
+    // Update form data when currentUser changes (handled globally now)
     if (currentUser) {
       setFormData({
         firstName: currentUser.firstName || '',
@@ -95,7 +84,7 @@ export default function ProfilePage() {
         emailNotifications: currentUser.emailNotifications !== false,
       });
     }
-  }, [connected, publicKey, currentUser, setCurrentUser]);
+  }, [currentUser]);
 
   const handleSave = () => {
     if (!currentUser || !publicKey) return;

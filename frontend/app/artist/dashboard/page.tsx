@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Music, DollarSign, Users, TrendingUp, Edit, Trash2, Play, Pause, Send } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import useAppStore from '@/lib/store';
+import { solanaService } from '@/lib/solana';
 import { toast } from 'sonner';
 
 interface RoyaltyDistribution {
@@ -41,8 +42,8 @@ export default function ArtistDashboardPage() {
     pricePerToken: '',
   });
 
-  const { connected, publicKey } = useWallet();
-  const { tracks, updateTrack, deleteTrack, investments, getInvestmentsByTrack, addRoyaltyDistribution, getRoyaltyDistributionsByTrack } = useAppStore();
+  const { connected, publicKey, signTransaction } = useWallet();
+  const { tracks, updateTrack, deleteTrack, investments, getInvestmentsByTrack, addRoyaltyDistribution, getRoyaltyDistributionsByTrack, addRoyaltyPayment } = useAppStore();
 
   // Get artist's tracks
   const artistTracks = tracks.filter(track => 
@@ -109,7 +110,7 @@ export default function ArtistDashboardPage() {
   };
 
   const processRoyaltyDistribution = async () => {
-    if (!selectedTrack || !royaltyAmount) return;
+    if (!selectedTrack || !royaltyAmount || !selectedTrack.tokenMint) return;
 
     const amount = parseFloat(royaltyAmount);
     if (amount <= 0) {
@@ -117,52 +118,93 @@ export default function ArtistDashboardPage() {
       return;
     }
 
-    const trackInvestments = getInvestmentsByTrack(selectedTrack.id);
-    const totalTokensHeld = trackInvestments.reduce((sum, inv) => sum + inv.amount, 0);
-
-    if (totalTokensHeld === 0) {
-      toast.error('No tokens have been sold for this track yet');
+    if (!selectedTrack.isTokenized || !selectedTrack.tokenMint) {
+      toast.error('This track is not tokenized yet');
       return;
     }
 
     try {
       // Show loading toast
       const loadingToast = toast.loading('Distributing royalties...', {
-        description: 'Processing payments to all token holders.'
+        description: 'Processing blockchain payments to all token holders.'
       });
 
-      // Simulate blockchain transaction
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Get investment data for this track to determine token holders
+      const trackInvestments = getInvestmentsByTrack(selectedTrack.id);
+      
+      if (trackInvestments.length === 0) {
+        throw new Error('No investments found for this track. Investors need to purchase tokens first.');
+      }
 
-      // Calculate per-token amount
-      const perTokenAmount = amount / totalTokensHeld;
+      // Use the new proportional distribution function with investment data
+      const wallet = { publicKey, signTransaction };
+      const result = await solanaService.distributeRoyaltiesProportionally(
+        wallet as any,
+        selectedTrack.tokenMint,
+        amount,
+        royaltyDescription,
+        trackInvestments.map(inv => ({
+          investorId: inv.investorId,
+          amount: inv.amount // number of tokens owned
+        }))
+      );
+
+      toast.dismiss(loadingToast);
+
+      // Calculate per-token amount from actual distribution
+      const totalTokensDistributed = result.recipients.reduce((sum: number, r: any) => sum + r.tokens, 0);
+      const perTokenAmount = totalTokensDistributed > 0 ? result.totalDistributed / totalTokensDistributed : 0;
 
       // Create royalty distribution record
+      const distributionId = `royalty-${Date.now()}`;
       addRoyaltyDistribution({
         trackId: selectedTrack.id,
         artistId: publicKey!.toString(),
-        totalAmount: amount,
+        totalAmount: result.totalDistributed,
         perTokenAmount,
         distributionDate: new Date().toISOString(),
-        description: royaltyDescription,
-        totalTokensEligible: totalTokensHeld,
-        uniqueInvestors: new Set(trackInvestments.map(inv => inv.investorId)).size
+        description: royaltyDescription || `Royalty distribution - ${result.recipients.length} recipients`,
+        totalTokensEligible: totalTokensDistributed,
+        uniqueInvestors: result.recipients.length
       });
 
-      toast.dismiss(loadingToast);
-      
-      const uniqueInvestors = new Set(trackInvestments.map(inv => inv.investorId)).size;
+      // Record individual royalty payments to each recipient
+      result.recipients.forEach(recipient => {
+        addRoyaltyPayment({
+          investorId: recipient.wallet,
+          trackId: selectedTrack.id,
+          distributionId,
+          amount: recipient.amount,
+          tokens: recipient.tokens,
+          transactionSignature: result.signature,
+          receivedAt: new Date().toISOString()
+        });
+      });
       
       toast.success(`Royalty distributed successfully!`, {
-        description: `${amount} SOL distributed to ${uniqueInvestors} investors (${perTokenAmount.toFixed(4)} SOL per token).`
+        description: `${result.totalDistributed.toFixed(4)} SOL distributed to ${result.recipients.length} token holders (${perTokenAmount.toFixed(6)} SOL per token).`
       });
 
       setShowRoyaltyDialog(false);
       setSelectedTrack(null);
+      setRoyaltyAmount('');
+      setRoyaltyDescription('');
       
     } catch (error) {
       console.error('Royalty distribution failed:', error);
-      toast.error('Failed to distribute royalties. Please try again.');
+      let errorMessage = 'Failed to distribute royalties. Please try again.';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('Insufficient SOL balance')) {
+          errorMessage = error.message;
+        } else if (error.message.includes('No token holders found')) {
+          errorMessage = 'No token holders found for this track';
+        } else if (error.message.includes('User rejected')) {
+          errorMessage = 'Transaction cancelled by user';
+        }
+      }
+      
+      toast.error(errorMessage);
     }
   };
 

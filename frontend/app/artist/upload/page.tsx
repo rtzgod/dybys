@@ -12,6 +12,7 @@ import { Upload, Music, Coins, Play, Pause, DollarSign, Users, X, AlertCircle } 
 import { useWallet } from '@solana/wallet-adapter-react';
 import useAppStore from '@/lib/store';
 import { toast } from 'sonner';
+import { solanaService } from '@/lib/solana';
 
 interface TrackFormData {
   title: string;
@@ -51,6 +52,7 @@ export default function ArtistUploadPage() {
   
   const { connected, publicKey } = useWallet();
   const { addTrack, updateTrack, setCurrentUser, currentUser } = useAppStore();
+  const wallet = { publicKey, signTransaction: useWallet().signTransaction } as any;
 
   const handleInputChange = (field: keyof TrackFormData, value: string) => {
     setFormData(prev => ({
@@ -214,7 +216,7 @@ export default function ArtistUploadPage() {
   };
 
   const handleTokenizeTrack = async () => {
-    if (!uploadedTrack || !connected) return;
+    if (!uploadedTrack || !connected || !publicKey) return;
 
     if (!validateTokenizeForm()) {
       toast.error('Please fix the validation errors');
@@ -225,27 +227,45 @@ export default function ArtistUploadPage() {
 
     try {
       // Show loading toast
-      const loadingToast = toast.loading('Creating tokens...', {
-        description: 'Deploying your track token contract on Solana blockchain.'
+      const loadingToast = toast.loading('Creating tokens on Solana...', {
+        description: 'This may take a few seconds. Please confirm the transaction in your wallet.'
       });
 
-      // Simulate blockchain transaction
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Get user's SOL balance first
+      const balance = await solanaService.getBalance(publicKey);
+      if (balance < 0.01) { // Minimum balance for transactions
+        toast.dismiss(loadingToast);
+        toast.error('Insufficient SOL balance', {
+          description: 'You need at least 0.01 SOL to cover transaction fees.'
+        });
+        return;
+      }
+
+      // Create tokens on blockchain
+      const tokenizationResult = await solanaService.tokenizeTrack(
+        wallet,
+        formData.title,
+        parseInt(formData.totalSupply),
+        parseFloat(formData.pricePerToken),
+        parseInt(formData.royaltyPercentage)
+      );
 
       // Dismiss loading toast
       toast.dismiss(loadingToast);
 
-      // Update track in store with tokenization parameters
+      // Update track in store with blockchain data
       updateTrack(uploadedTrack.id, {
         isTokenized: true,
         totalSupply: parseInt(formData.totalSupply),
         pricePerToken: parseFloat(formData.pricePerToken),
         royaltyPercentage: parseInt(formData.royaltyPercentage),
-        tokenMint: `${uploadedTrack.id}-mint-${Date.now()}` // Mock token mint
+        tokenMint: tokenizationResult.tokenMint,
+        metadataUri: tokenizationResult.metadataUri,
+        transactionSignature: tokenizationResult.signature
       });
 
       toast.success(`"${formData.title}" has been tokenized successfully!`, {
-        description: `${formData.totalSupply} tokens created at ${formData.pricePerToken} SOL each. Your track is now available for investment.`
+        description: `${formData.totalSupply} tokens created on Solana blockchain. Transaction: ${tokenizationResult.signature.slice(0, 8)}...`
       });
       
       // Reset form
@@ -264,7 +284,23 @@ export default function ArtistUploadPage() {
 
     } catch (error) {
       console.error('Tokenization failed:', error);
-      toast.error('Tokenization failed. Please try again.');
+      
+      let errorMessage = 'Tokenization failed. Please try again.';
+      let description = '';
+      
+      if (error instanceof Error) {
+        if (error.message.includes('User rejected')) {
+          errorMessage = 'Transaction cancelled';
+          description = 'You cancelled the transaction in your wallet.';
+        } else if (error.message.includes('insufficient funds')) {
+          errorMessage = 'Insufficient funds';
+          description = 'You don\'t have enough SOL to cover the transaction fees.';
+        } else {
+          description = error.message;
+        }
+      }
+      
+      toast.error(errorMessage, { description });
     } finally {
       setIsTokenizing(false);
     }

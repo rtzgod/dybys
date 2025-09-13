@@ -110,7 +110,7 @@ export default function MarketplacePage() {
       });
 
       toast.success(`Successfully invested ${totalCost.toFixed(3)} SOL in "${selectedTrack.title}"!`, {
-        description: `You now own ${amount} tokens and will receive royalty distributions.`
+        description: `You now own ${amount} tokens.`
       });
       setSelectedTrack(null);
       setInvestAmount('');

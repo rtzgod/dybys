@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppWalletProvider } from "@/components/WalletProvider";
 import { Navigation } from "@/components/Navigation";
+import { WalletConnectionHandler } from "@/components/WalletConnectionHandler";
 import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
@@ -36,6 +37,7 @@ export default function RootLayout({
         className={`${geistSans.variable} ${geistMono.variable} antialiased`}
       >
         <AppWalletProvider>
+          <WalletConnectionHandler />
           <div className="min-h-screen bg-background">
             <Navigation />
             <main>{children}</main>

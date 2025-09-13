@@ -9,6 +9,7 @@ import { useState, useRef, useEffect } from 'react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import { toast } from 'sonner';
 import { audioManager } from '@/lib/audioManager';
+import { InvestmentDialog } from './InvestmentDialog';
 
 interface Track {
   id: string;
@@ -26,6 +27,9 @@ interface Track {
   totalSupply?: number;
   pricePerToken?: number;
   tokensSold?: number;
+  tokenMint?: string;
+  metadataUri?: string;
+  transactionSignature?: string;
   investments?: any[];
 }
 
@@ -41,6 +45,7 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
   const [duration, setDuration] = useState(0);
   const [audioUrl, setAudioUrl] = useState<string>('');
   const [audioError, setAudioError] = useState<string>('');
+  const [showInvestmentDialog, setShowInvestmentDialog] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const { connected, publicKey } = useWallet();
 
@@ -56,20 +61,55 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
   useEffect(() => {
     setAudioError('');
     
-    if (track.audioFile) {
-      // Create fresh URL from stored File object
-      const url = URL.createObjectURL(track.audioFile);
-      setAudioUrl(url);
-      
-      // Cleanup previous URL
-      return () => {
-        URL.revokeObjectURL(url);
-      };
-    } else if (track.fileUrl) {
+    console.log('TrackCard audio setup:', {
+      trackId: track.id,
+      hasAudioFile: Boolean(track.audioFile),
+      audioFileType: track.audioFile?.type,
+      audioFileSize: track.audioFile?.size,
+      hasFileUrl: Boolean(track.fileUrl),
+      fileUrl: track.fileUrl
+    });
+    
+    if (track.audioFile && track.audioFile instanceof File) {
+      try {
+        // Validate file before creating URL
+        if (track.audioFile.size === 0) {
+          console.warn('Audio file is empty:', track.audioFile);
+          setAudioError('Audio file is empty');
+          setAudioUrl('');
+          return;
+        }
+        
+        if (!track.audioFile.type.startsWith('audio/')) {
+          console.warn('Invalid audio file type:', track.audioFile.type);
+          setAudioError('Invalid audio file type');
+          setAudioUrl('');
+          return;
+        }
+        
+        // Create fresh URL from stored File object
+        const url = URL.createObjectURL(track.audioFile);
+        console.log('Created object URL:', url);
+        setAudioUrl(url);
+        
+        // Cleanup previous URL
+        return () => {
+          console.log('Revoking object URL:', url);
+          URL.revokeObjectURL(url);
+        };
+      } catch (error) {
+        console.error('Failed to create object URL:', error);
+        setAudioError('Failed to load audio file');
+        setAudioUrl('');
+      }
+    } else if (track.fileUrl && track.fileUrl.trim()) {
       // Fallback to stored URL
+      console.log('Using fallback fileUrl:', track.fileUrl);
       setAudioUrl(track.fileUrl);
     } else {
-      setAudioError('Audio file not available');
+      console.warn('No audio source available for track:', track.id);
+      setAudioError('Audio file not available after page reload - please re-upload');
+      setAudioUrl('');
     }
   }, [track.audioFile, track.fileUrl, track.id]);
 
@@ -91,9 +131,38 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
       setAudioError('');
     };
 
-    const handleError = () => {
-      console.error('Audio loading error:', audio.error);
-      setAudioError('Failed to load audio file');
+    const handleError = (event: Event) => {
+      console.error('Audio loading error:', {
+        error: audio.error,
+        readyState: audio.readyState,
+        networkState: audio.networkState,
+        src: audio.src,
+        event
+      });
+      
+      let errorMessage = 'Failed to load audio file';
+      if (audio.error) {
+        switch (audio.error.code) {
+          case MediaError.MEDIA_ERR_ABORTED:
+            errorMessage = 'Audio loading was aborted';
+            break;
+          case MediaError.MEDIA_ERR_NETWORK:
+            errorMessage = 'Network error while loading audio';
+            break;
+          case MediaError.MEDIA_ERR_DECODE:
+            errorMessage = 'Audio file is corrupted or unsupported format';
+            break;
+          case MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED:
+            errorMessage = 'Audio format not supported';
+            break;
+          default:
+            errorMessage = 'Unknown audio error';
+        }
+      } else if (!audio.src || audio.src === '') {
+        errorMessage = 'No audio source provided';
+      }
+      
+      setAudioError(errorMessage);
       setIsPlaying(false);
     };
 
@@ -241,11 +310,13 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
         </div>
 
         {/* Hidden audio element */}
-        <audio
-          ref={audioRef}
-          {...(audioUrl && { src: audioUrl })}
-          preload="metadata"
-        />
+        {audioUrl && (
+          <audio
+            ref={audioRef}
+            src={audioUrl}
+            preload="metadata"
+          />
+        )}
         
         {/* Show audio error if any */}
         {audioError && (
@@ -286,20 +357,22 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
             </div>
 
             {/* Investment Button */}
-            {showInvestButton && onInvest && (
+            {showInvestButton && track.isTokenized && (
               <Button 
-                onClick={() => onInvest(track.id)}
+                onClick={() => setShowInvestmentDialog(true)}
                 className="w-full"
-                disabled={tokensSold >= totalSupply || isOwnTrack}
+                disabled={tokensSold >= totalSupply || isOwnTrack || !track.tokenMint}
               >
                 {isOwnTrack ? (
                   'Your Track'
                 ) : tokensSold >= totalSupply ? (
                   'Fully Funded'
+                ) : !track.tokenMint ? (
+                  'Not Available'
                 ) : (
                   <>
                     <TrendingUp className="w-4 h-4 mr-2" />
-                    Invest in Track
+                    Invest {track.pricePerToken?.toFixed(3)} SOL
                   </>
                 )}
               </Button>
@@ -314,6 +387,13 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
           </div>
         )}
       </CardContent>
+      
+      {/* Investment Dialog */}
+      <InvestmentDialog
+        isOpen={showInvestmentDialog}
+        onClose={() => setShowInvestmentDialog(false)}
+        track={track}
+      />
     </Card>
   );
 }

@@ -80,7 +80,7 @@ export default function Home() {
             </h1>
             <p className="text-xl text-muted-foreground max-w-2xl mx-auto">
               The decentralized music platform where artists tokenize tracks and investors fund the next big hits. 
-              Built on Solana blockchain for transparent royalty sharing.
+              Built on Solana blockchain for transparent ownership.
             </p>
             <div className="flex flex-col sm:flex-row gap-4 justify-center">
               <Button asChild size="lg" className="px-8">

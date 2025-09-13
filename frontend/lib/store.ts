@@ -22,6 +22,8 @@ export interface Track {
   pricePerToken?: number;
   royaltyPercentage?: number;
   tokenMint?: string;
+  metadataUri?: string;
+  transactionSignature?: string;
   investments?: Investment[];
   createdAt: string;
 }
@@ -32,7 +34,19 @@ export interface Investment {
   trackId: string;
   amount: number;
   totalPaid: number;
+  transactionSignature?: string;
   createdAt: string;
+}
+
+export interface RoyaltyPayment {
+  id: string;
+  investorId: string;
+  trackId: string;
+  distributionId: string; // Links to RoyaltyDistribution
+  amount: number; // SOL received
+  tokens: number; // Number of tokens that earned this payment
+  transactionSignature: string;
+  receivedAt: string;
 }
 
 export interface RoyaltyDistribution {
@@ -84,6 +98,7 @@ export interface User {
 interface AppState {
   // User state
   currentUser: User | null;
+  users: Record<string, User>; // Store multiple user profiles by wallet address
   setCurrentUser: (user: User | null) => void;
   updateUserProfile: (walletAddress: string, profileData: Partial<User>) => void;
   getUserProfile: (walletAddress: string) => User | null;
@@ -107,6 +122,12 @@ interface AppState {
   addRoyaltyDistribution: (distribution: Omit<RoyaltyDistribution, 'id'>) => void;
   getRoyaltyDistributionsByTrack: (trackId: string) => RoyaltyDistribution[];
   getRoyaltyDistributionsByArtist: (artistId: string) => RoyaltyDistribution[];
+
+  // Royalty payments state
+  royaltyPayments: RoyaltyPayment[];
+  addRoyaltyPayment: (payment: Omit<RoyaltyPayment, 'id'>) => void;
+  getRoyaltyPaymentsByInvestor: (investorId: string) => RoyaltyPayment[];
+  getRoyaltyPaymentsByTrack: (trackId: string) => RoyaltyPayment[];
 }
 
 const useAppStore = create<AppState>()(
@@ -114,58 +135,89 @@ const useAppStore = create<AppState>()(
     (set, get) => ({
       // Initial state
       currentUser: null,
+      users: {},
       tracks: [],
       investments: [],
       royaltyDistributions: [],
+      royaltyPayments: [],
 
       // Actions
-      setCurrentUser: (user) => set({ currentUser: user }),
+      setCurrentUser: (user) => set((state) => {
+        const newState: any = { currentUser: user };
+        
+        // Also store the user in the users record if provided
+        if (user) {
+          newState.users = {
+            ...state.users,
+            [user.walletAddress]: user
+          };
+        }
+        
+        return newState;
+      }),
 
       updateUserProfile: (walletAddress, profileData) => {
         set((state) => {
-          if (state.currentUser?.walletAddress === walletAddress) {
-            const updatedUser = {
-              ...state.currentUser,
-              ...profileData,
-              lastUpdated: new Date().toISOString()
-            };
-            
-            // Calculate profile completeness
-            const requiredFields = ['firstName', 'lastName', 'email', 'bio'];
-            const completedFields = requiredFields.filter(field => 
-              updatedUser[field as keyof User] && (updatedUser[field as keyof User] as string).trim()
-            ).length;
-            updatedUser.profileCompleteness = Math.round((completedFields / requiredFields.length) * 100);
-            
-            // Update artist info in all tracks by this user
-            const updatedTracks = state.tracks.map(track => {
-              if (track.artist.walletAddress === walletAddress) {
-                return {
-                  ...track,
-                  artist: {
-                    ...track.artist,
-                    email: updatedUser.email || track.artist.email,
-                    displayName: updatedUser.displayName,
-                    firstName: updatedUser.firstName,
-                    lastName: updatedUser.lastName
-                  }
-                };
-              }
-              return track;
-            });
-            
-            return { 
-              currentUser: updatedUser,
-              tracks: updatedTracks
-            };
-          }
-          return state;
+          // Find existing user in users record or create new one
+          const existingUser = state.users[walletAddress] || {
+            walletAddress,
+            email: '',
+            role: 'ARTIST' as const,
+            joinDate: new Date().toISOString()
+          };
+
+          const updatedUser = {
+            ...existingUser,
+            ...profileData,
+            lastUpdated: new Date().toISOString()
+          };
+          
+          // Calculate profile completeness
+          const requiredFields = ['firstName', 'lastName', 'email', 'bio'];
+          const completedFields = requiredFields.filter(field => 
+            updatedUser[field as keyof User] && (updatedUser[field as keyof User] as string).trim()
+          ).length;
+          updatedUser.profileCompleteness = Math.round((completedFields / requiredFields.length) * 100);
+          
+          // Update artist info in all tracks by this user
+          const updatedTracks = state.tracks.map(track => {
+            if (track.artist.walletAddress === walletAddress) {
+              return {
+                ...track,
+                artist: {
+                  ...track.artist,
+                  email: updatedUser.email || track.artist.email,
+                  displayName: updatedUser.displayName,
+                  firstName: updatedUser.firstName,
+                  lastName: updatedUser.lastName
+                }
+              };
+            }
+            return track;
+          });
+
+          // Update users record
+          const updatedUsers = {
+            ...state.users,
+            [walletAddress]: updatedUser
+          };
+          
+          // Update currentUser if it's the same wallet address
+          const newCurrentUser = state.currentUser?.walletAddress === walletAddress 
+            ? updatedUser 
+            : state.currentUser;
+          
+          return { 
+            currentUser: newCurrentUser,
+            users: updatedUsers,
+            tracks: updatedTracks
+          };
         });
       },
 
       getUserProfile: (walletAddress) => {
         const state = get();
-        return state.currentUser?.walletAddress === walletAddress ? state.currentUser : null;
+        return state.users[walletAddress] || null;
       },
 
       updateArtistInfoInTracks: (walletAddress, artistInfo) => {
@@ -275,15 +327,39 @@ const useAppStore = create<AppState>()(
 
       getRoyaltyDistributionsByArtist: (artistId) => {
         return get().royaltyDistributions.filter(dist => dist.artistId === artistId);
+      },
+
+      addRoyaltyPayment: (paymentData) => {
+        const payment: RoyaltyPayment = {
+          ...paymentData,
+          id: `payment-${Date.now()}`
+        };
+
+        set((state) => ({
+          royaltyPayments: [...state.royaltyPayments, payment]
+        }));
+      },
+
+      getRoyaltyPaymentsByInvestor: (investorId) => {
+        return get().royaltyPayments.filter(payment => payment.investorId === investorId);
+      },
+
+      getRoyaltyPaymentsByTrack: (trackId) => {
+        return get().royaltyPayments.filter(payment => payment.trackId === trackId);
       }
     }),
     {
       name: 'dybys-storage', // unique name for localStorage
       partialize: (state) => ({
-        tracks: state.tracks,
+        tracks: state.tracks.map(track => ({
+          ...track,
+          audioFile: undefined // Don't persist File objects as they can't be serialized
+        })),
         investments: state.investments,
         royaltyDistributions: state.royaltyDistributions,
-        currentUser: state.currentUser
+        royaltyPayments: state.royaltyPayments,
+        currentUser: state.currentUser,
+        users: state.users
       })
     }
   )

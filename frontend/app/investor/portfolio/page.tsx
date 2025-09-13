@@ -69,7 +69,7 @@ export default function InvestorPortfolioPage() {
   });
   
   const { connected, publicKey } = useWallet();
-  const { tracks, getInvestmentsByInvestor, getInvestmentsByTrack } = useAppStore();
+  const { tracks, getInvestmentsByInvestor, getInvestmentsByTrack, getRoyaltyPaymentsByInvestor } = useAppStore();
 
   useEffect(() => {
     if (connected) {
@@ -93,12 +93,18 @@ export default function InvestorPortfolioPage() {
         const totalInvested = investment.totalPaid;
         const pricePerToken = track.pricePerToken || 0;
         
-        // Calculate current value (simplified - could be more complex with market dynamics)
-        const currentValue = totalInvested * 1.05; // 5% appreciation for demo
+        // Calculate current value - tokens maintain their investment value until sold
+        const currentValue = totalInvested; // No fake appreciation
         
         // Calculate total tokens sold for this track
         const allTrackInvestments = getInvestmentsByTrack(track.id);
         const tokensSold = allTrackInvestments.reduce((sum, inv) => sum + inv.amount, 0);
+
+        // Calculate actual royalties earned from recorded payments
+        const royaltyPayments = getRoyaltyPaymentsByInvestor(publicKey.toString()).filter(
+          payment => payment.trackId === track.id
+        );
+        const royaltiesEarned = royaltyPayments.reduce((sum, payment) => sum + payment.amount, 0);
 
         return {
           id: investment.id,
@@ -109,7 +115,7 @@ export default function InvestorPortfolioPage() {
           totalInvested,
           pricePerToken,
           currentValue,
-          royaltiesEarned: totalInvested * 0.02, // 2% royalties earned for demo
+          royaltiesEarned, // Real royalties from actual distributions
           investmentDate: investment.createdAt,
           track: {
             totalSupply: track.totalSupply || 0,
@@ -119,26 +125,20 @@ export default function InvestorPortfolioPage() {
         };
       }).filter(Boolean) as Investment[];
 
-      // Generate mock royalty payments based on investments
-      const portfolioRoyaltyPayments: RoyaltyPayment[] = portfolioInvestments.flatMap(investment => [
-        {
-          id: `royalty-${investment.id}-1`,
-          trackTitle: investment.trackTitle,
-          amount: investment.royaltiesEarned * 0.6,
-          date: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          transactionId: `0x${Math.random().toString(16).substr(2, 8)}...${Math.random().toString(16).substr(2, 4)}`
-        },
-        {
-          id: `royalty-${investment.id}-2`,
-          trackTitle: investment.trackTitle,
-          amount: investment.royaltiesEarned * 0.4,
-          date: new Date(Date.now() - 60 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-          transactionId: `0x${Math.random().toString(16).substr(2, 8)}...${Math.random().toString(16).substr(2, 4)}`
-        }
-      ]);
+      // Get real royalty payments for this investor
+      const investorRoyaltyPayments = getRoyaltyPaymentsByInvestor(publicKey.toString()).map(payment => {
+        const track = tracks.find(t => t.id === payment.trackId);
+        return {
+          id: payment.id,
+          trackTitle: track?.title || 'Unknown Track',
+          amount: payment.amount,
+          date: payment.receivedAt.split('T')[0], // Format date
+          transactionId: payment.transactionSignature
+        };
+      });
 
       setInvestments(portfolioInvestments);
-      setRoyaltyPayments(portfolioRoyaltyPayments);
+      setRoyaltyPayments(investorRoyaltyPayments);
       
       // Load portfolio notes from localStorage
       loadPortfolioNotes();
@@ -242,7 +242,7 @@ export default function InvestorPortfolioPage() {
     const totalInvested = investments.reduce((sum, inv) => sum + inv.totalInvested, 0);
     const currentValue = investments.reduce((sum, inv) => sum + inv.currentValue, 0);
     const totalRoyalties = investments.reduce((sum, inv) => sum + inv.royaltiesEarned, 0);
-    const totalGain = currentValue + totalRoyalties - totalInvested;
+    const totalGain = (currentValue - totalInvested) + totalRoyalties; // Capital gains + royalties
     const totalGainPercentage = totalInvested > 0 ? (totalGain / totalInvested) * 100 : 0;
 
     return {
