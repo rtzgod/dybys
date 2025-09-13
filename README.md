@@ -15,23 +15,39 @@ A complete decentralized platform for tokenizing music assets built on Solana bl
 🎨 **Modern UI**: Next.js 15, TypeScript, and Tailwind CSS  
 🐳 **Fully Dockerized**: One-command setup for the entire platform  
 
-## 🚀 Quick Start with Docker (Recommended)
+## 🚀 Quick Start (2 Commands!)
 
-The fastest way to get the complete dybys platform running:
+### Prerequisites
+- **Docker Desktop** installed and running
+- **Git** for cloning the repository
+- **Solana Wallet** (Phantom/Solflare) for testing
 
+📋 **Need help installing?** → See [PREREQUISITES.md](./PREREQUISITES.md)
+
+### Automated Setup
 ```bash
-# 1. Clone the repository
-git clone https://github.com/your-username/dybys.git
+# 1. Clone the repository  
+git clone <your-repo-url>
 cd dybys
 
-# 2. Start everything with Docker
-docker-compose up -d
+# 2. Run the setup script (handles everything!)
+./setup.sh
+```
 
-# 3. Wait for all services to start (about 2 minutes)
-# The setup script will automatically test all endpoints
+**That's it!** The script will:
+- ✅ Check all prerequisites
+- ✅ Configure environment files  
+- ✅ Build and start all services
+- ✅ Test all endpoints
+- ✅ Provide access URLs
 
-# 4. Access the platform
-open http://localhost:3000
+### Alternative: Manual Docker Setup
+```bash
+# If you prefer manual control
+docker-compose up -d --build
+
+# Wait 2-3 minutes, then test
+./test-docker.sh
 ```
 
 **That's it!** 🎉 You now have:
@@ -174,25 +190,61 @@ cd backend && npm run dev
 cd frontend && npm run dev
 ```
 
+## ⚠️ Common Issues & Quick Fixes
+
+### "Docker is not installed/running"
+```bash
+# Install Docker Desktop and start it
+# Windows/Mac: Download from docker.com
+# Linux: curl -fsSL https://get.docker.com -o get-docker.sh && sudo sh get-docker.sh
+```
+
+### "Port already in use"
+```bash
+# Check what's using the ports
+lsof -i :3000,5000,5432,8899
+
+# Stop conflicting services or change ports in docker-compose.yml
+```
+
+### "Permission denied" (Linux)
+```bash
+sudo usermod -aG docker $USER
+newgrp docker
+```
+
+### "Build failed" / "No space left"
+```bash
+docker system prune -a
+docker volume prune
+```
+
 ## 🔧 Configuration
 
-### Environment Variables
+### Docker Setup (Recommended)
+**No configuration needed!** Environment variables are built into `docker-compose.yml`.
 
-The Docker setup includes pre-configured environment variables. For manual setup:
+The `./setup.sh` script automatically:
+- Creates Docker-compatible `.env` files
+- Backs up any existing configuration
+- Sets correct ports and database URLs
 
-#### Frontend (.env.local)
-```env
-NEXT_PUBLIC_SOLANA_RPC=http://localhost:8899
-NEXT_PUBLIC_API_URL=http://localhost:5000
-NEXT_PUBLIC_PROGRAM_ID=FPZCujxx2DPXL2rURe2yqvTKMwzJWcVmaDmq4MRQAhQ
-```
+### Manual Development Setup
+Only needed if running services outside Docker:
 
 #### Backend (.env)
 ```env
-DATABASE_URL=postgresql://dybys:dybys123@postgres:5432/dybys
-JWT_SECRET=your-super-secret-jwt-key-here
-PORT=5000
-SOLANA_RPC_URL=http://solana-validator:8899
+DATABASE_URL="file:./dev.db"
+JWT_SECRET="your-super-secret-jwt-key"
+PORT=3001
+SOLANA_RPC_URL="http://localhost:8899"
+```
+
+#### Frontend (.env.local)
+```env
+NEXT_PUBLIC_SOLANA_RPC="http://localhost:8899"
+NEXT_PUBLIC_API_URL="http://localhost:3001"  
+NEXT_PUBLIC_PROGRAM_ID="FPZCujxx2DPXL2rURe2yqvTKMwzJWcVmaDmq4MRQAhQ"
 ```
 
 ## 🧪 Testing the Platform
