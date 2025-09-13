@@ -6,8 +6,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { TrendingUp, DollarSign, Music, Users, ArrowUpRight, ArrowDownRight, Eye } from 'lucide-react';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { TrendingUp, DollarSign, Music, Users, ArrowUpRight, ArrowDownRight, Eye, Edit, Save, X, Plus } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import useAppStore from '@/lib/store';
 import { toast } from 'sonner';
@@ -38,12 +41,32 @@ interface RoyaltyPayment {
   transactionId: string;
 }
 
+interface PortfolioNote {
+  investmentId: string;
+  notes: string;
+  investmentGoal: string;
+  tags: string[];
+  targetReturn: number;
+  personalRating: number; // 1-5 stars
+  lastUpdated: string;
+}
+
 export default function InvestorPortfolioPage() {
   const [investments, setInvestments] = useState<Investment[]>([]);
   const [royaltyPayments, setRoyaltyPayments] = useState<RoyaltyPayment[]>([]);
+  const [portfolioNotes, setPortfolioNotes] = useState<PortfolioNote[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedInvestment, setSelectedInvestment] = useState<Investment | null>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
+  const [showNotesDialog, setShowNotesDialog] = useState(false);
+  const [editingNote, setEditingNote] = useState<PortfolioNote | null>(null);
+  const [noteFormData, setNoteFormData] = useState({
+    notes: '',
+    investmentGoal: '',
+    tags: '',
+    targetReturn: '',
+    personalRating: 3
+  });
   
   const { connected, publicKey } = useWallet();
   const { tracks, getInvestmentsByInvestor, getInvestmentsByTrack } = useAppStore();
@@ -116,12 +139,103 @@ export default function InvestorPortfolioPage() {
 
       setInvestments(portfolioInvestments);
       setRoyaltyPayments(portfolioRoyaltyPayments);
+      
+      // Load portfolio notes from localStorage
+      loadPortfolioNotes();
     } catch (error) {
       console.error('Failed to fetch portfolio data:', error);
       toast.error('Failed to load portfolio data');
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadPortfolioNotes = () => {
+    try {
+      const savedNotes = localStorage.getItem(`portfolio-notes-${publicKey?.toString()}`);
+      if (savedNotes) {
+        setPortfolioNotes(JSON.parse(savedNotes));
+      }
+    } catch (error) {
+      console.error('Failed to load portfolio notes:', error);
+    }
+  };
+
+  const savePortfolioNotes = (notes: PortfolioNote[]) => {
+    try {
+      localStorage.setItem(`portfolio-notes-${publicKey?.toString()}`, JSON.stringify(notes));
+      setPortfolioNotes(notes);
+    } catch (error) {
+      console.error('Failed to save portfolio notes:', error);
+      toast.error('Failed to save notes');
+    }
+  };
+
+  const handleAddNote = (investment: Investment) => {
+    const existingNote = portfolioNotes.find(note => note.investmentId === investment.id);
+    if (existingNote) {
+      setEditingNote(existingNote);
+      setNoteFormData({
+        notes: existingNote.notes,
+        investmentGoal: existingNote.investmentGoal,
+        tags: existingNote.tags.join(', '),
+        targetReturn: existingNote.targetReturn.toString(),
+        personalRating: existingNote.personalRating
+      });
+    } else {
+      setEditingNote(null);
+      setNoteFormData({
+        notes: '',
+        investmentGoal: '',
+        tags: '',
+        targetReturn: '',
+        personalRating: 3
+      });
+    }
+    setSelectedInvestment(investment);
+    setShowNotesDialog(true);
+  };
+
+  const handleSaveNote = () => {
+    if (!selectedInvestment) return;
+
+    const noteData: PortfolioNote = {
+      investmentId: selectedInvestment.id,
+      notes: noteFormData.notes,
+      investmentGoal: noteFormData.investmentGoal,
+      tags: noteFormData.tags.split(',').map(tag => tag.trim()).filter(tag => tag),
+      targetReturn: parseFloat(noteFormData.targetReturn) || 0,
+      personalRating: noteFormData.personalRating,
+      lastUpdated: new Date().toISOString()
+    };
+
+    const updatedNotes = editingNote 
+      ? portfolioNotes.map(note => note.investmentId === selectedInvestment.id ? noteData : note)
+      : [...portfolioNotes, noteData];
+
+    savePortfolioNotes(updatedNotes);
+    
+    toast.success('Investment information saved!', {
+      description: 'Your notes and goals have been updated.'
+    });
+    
+    setShowNotesDialog(false);
+    setEditingNote(null);
+  };
+
+  const getInvestmentNote = (investmentId: string) => {
+    return portfolioNotes.find(note => note.investmentId === investmentId);
+  };
+
+  const renderStars = (rating: number) => {
+    return Array.from({ length: 5 }, (_, i) => (
+      <span 
+        key={i} 
+        className={`text-lg ${i < rating ? 'text-yellow-400' : 'text-gray-300'}`}
+      >
+        ★
+      </span>
+    ));
   };
 
   const calculatePortfolioStats = () => {
@@ -316,21 +430,68 @@ export default function InvestorPortfolioPage() {
                       />
                     </div>
 
+                    {/* Investment Notes Preview */}
+                    {(() => {
+                      const note = getInvestmentNote(investment.id);
+                      return note && (
+                        <div className="bg-blue-50 p-3 rounded-lg border-l-4 border-blue-400">
+                          <div className="flex items-center justify-between mb-1">
+                            <span className="text-sm font-medium text-blue-800">My Investment Info</span>
+                            <div className="flex">{renderStars(note.personalRating)}</div>
+                          </div>
+                          {note.investmentGoal && (
+                            <div className="text-sm text-blue-700 mb-1">
+                              <strong>Goal:</strong> {note.investmentGoal}
+                            </div>
+                          )}
+                          {note.targetReturn > 0 && (
+                            <div className="text-sm text-blue-700 mb-1">
+                              <strong>Target Return:</strong> {note.targetReturn}% 
+                            </div>
+                          )}
+                          {note.tags.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-2">
+                              {note.tags.map((tag, index) => (
+                                <Badge key={index} variant="secondary" className="text-xs">
+                                  {tag}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                          {note.notes && (
+                            <div className="text-sm text-blue-700 mt-1">
+                              <strong>Notes:</strong> {note.notes.length > 100 ? `${note.notes.substring(0, 100)}...` : note.notes}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     <div className="flex items-center justify-between pt-2">
                       <div className="text-xs text-muted-foreground">
                         Invested on {new Date(investment.investmentDate).toLocaleDateString()}
                       </div>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => {
-                          setSelectedInvestment(investment);
-                          setShowDetailsDialog(true);
-                        }}
-                      >
-                        <Eye className="h-4 w-4 mr-1" />
-                        View Details
-                      </Button>
+                      <div className="flex space-x-2">
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => handleAddNote(investment)}
+                        >
+                          <Edit className="h-4 w-4 mr-1" />
+                          {getInvestmentNote(investment.id) ? 'Edit Info' : 'Add Info'}
+                        </Button>
+                        <Button 
+                          variant="outline" 
+                          size="sm"
+                          onClick={() => {
+                            setSelectedInvestment(investment);
+                            setShowDetailsDialog(true);
+                          }}
+                        >
+                          <Eye className="h-4 w-4 mr-1" />
+                          View Details
+                        </Button>
+                      </div>
                     </div>
                   </CardContent>
                 </Card>
@@ -513,6 +674,118 @@ export default function InvestorPortfolioPage() {
               </div>
             </div>
           )}
+        </DialogContent>
+      </Dialog>
+
+      {/* Add/Edit Investment Information Dialog */}
+      <Dialog open={showNotesDialog} onOpenChange={setShowNotesDialog}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>
+              {editingNote ? 'Edit Investment Information' : 'Add Investment Information'}
+            </DialogTitle>
+            <DialogDescription>
+              Add personal notes, goals, and tracking information for your investment
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="space-y-6">
+            {selectedInvestment && (
+              <div className="bg-muted/30 p-3 rounded-lg">
+                <div className="flex items-center space-x-3">
+                  <Music className="h-5 w-5 text-primary" />
+                  <div>
+                    <h3 className="font-medium">{selectedInvestment.trackTitle}</h3>
+                    <p className="text-sm text-muted-foreground">
+                      {selectedInvestment.tokensOwned} tokens • {selectedInvestment.totalInvested.toFixed(2)} SOL invested
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="investmentGoal">Investment Goal</Label>
+                <Input
+                  id="investmentGoal"
+                  placeholder="e.g., Long-term hold, Quick profit, Support artist..."
+                  value={noteFormData.investmentGoal}
+                  onChange={(e) => setNoteFormData(prev => ({ ...prev, investmentGoal: e.target.value }))}
+                />
+              </div>
+              
+              <div className="space-y-2">
+                <Label htmlFor="targetReturn">Target Return (%)</Label>
+                <Input
+                  id="targetReturn"
+                  type="number"
+                  placeholder="e.g., 25"
+                  value={noteFormData.targetReturn}
+                  onChange={(e) => setNoteFormData(prev => ({ ...prev, targetReturn: e.target.value }))}
+                />
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="tags">Tags (comma-separated)</Label>
+              <Input
+                id="tags"
+                placeholder="e.g., high-risk, electronic, promising artist, long-term"
+                value={noteFormData.tags}
+                onChange={(e) => setNoteFormData(prev => ({ ...prev, tags: e.target.value }))}
+              />
+              <p className="text-xs text-muted-foreground">
+                Add tags to categorize and organize your investments
+              </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="personalRating">Personal Rating</Label>
+              <div className="flex items-center space-x-2">
+                {Array.from({ length: 5 }, (_, i) => (
+                  <button
+                    key={i}
+                    type="button"
+                    onClick={() => setNoteFormData(prev => ({ ...prev, personalRating: i + 1 }))}
+                    className={`text-2xl ${
+                      i < noteFormData.personalRating ? 'text-yellow-400' : 'text-gray-300'
+                    } hover:text-yellow-400 transition-colors`}
+                  >
+                    ★
+                  </button>
+                ))}
+                <span className="text-sm text-muted-foreground ml-2">
+                  ({noteFormData.personalRating}/5 stars)
+                </span>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="notes">Notes</Label>
+              <Textarea
+                id="notes"
+                placeholder="Add your thoughts about this investment, reasons for investing, performance observations, etc."
+                value={noteFormData.notes}
+                onChange={(e) => setNoteFormData(prev => ({ ...prev, notes: e.target.value }))}
+                rows={4}
+              />
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button 
+              variant="outline" 
+              onClick={() => setShowNotesDialog(false)}
+            >
+              <X className="h-4 w-4 mr-1" />
+              Cancel
+            </Button>
+            <Button onClick={handleSaveNote}>
+              <Save className="h-4 w-4 mr-1" />
+              Save Information
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>

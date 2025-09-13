@@ -11,6 +11,9 @@ export interface Track {
   artist: {
     email: string;
     walletAddress: string;
+    displayName?: string;
+    firstName?: string;
+    lastName?: string;
   };
   fileUrl: string;
   isTokenized: boolean;
@@ -47,17 +50,48 @@ export interface User {
   walletAddress: string;
   email: string;
   role: 'ARTIST' | 'INVESTOR';
+  // Profile information
+  firstName?: string;
+  lastName?: string;
+  displayName?: string;
+  bio?: string;
+  avatar?: string;
+  location?: string;
+  website?: string;
+  socialMedia?: {
+    twitter?: string;
+    instagram?: string;
+    spotify?: string;
+    soundcloud?: string;
+  };
+  // Artist-specific fields
+  genres?: string[];
+  yearsActive?: number;
+  recordLabel?: string;
+  // Investor-specific fields
+  investmentExperience?: 'BEGINNER' | 'INTERMEDIATE' | 'ADVANCED';
+  riskTolerance?: 'LOW' | 'MEDIUM' | 'HIGH';
+  // Settings
+  profilePublic?: boolean;
+  emailNotifications?: boolean;
+  // Metadata
+  profileCompleteness?: number;
+  joinDate?: string;
+  lastUpdated?: string;
 }
 
 interface AppState {
   // User state
   currentUser: User | null;
   setCurrentUser: (user: User | null) => void;
+  updateUserProfile: (walletAddress: string, profileData: Partial<User>) => void;
+  getUserProfile: (walletAddress: string) => User | null;
 
   // Tracks state
   tracks: Track[];
   addTrack: (track: Omit<Track, 'id' | 'createdAt'>) => string;
   updateTrack: (id: string, updates: Partial<Track>) => void;
+  deleteTrack: (id: string) => void;
   getTracksByArtist: (walletAddress: string) => Track[];
 
   // Investments state
@@ -85,6 +119,33 @@ const useAppStore = create<AppState>()(
       // Actions
       setCurrentUser: (user) => set({ currentUser: user }),
 
+      updateUserProfile: (walletAddress, profileData) => {
+        set((state) => {
+          if (state.currentUser?.walletAddress === walletAddress) {
+            const updatedUser = {
+              ...state.currentUser,
+              ...profileData,
+              lastUpdated: new Date().toISOString()
+            };
+            
+            // Calculate profile completeness
+            const requiredFields = ['firstName', 'lastName', 'email', 'bio'];
+            const completedFields = requiredFields.filter(field => 
+              updatedUser[field as keyof User] && (updatedUser[field as keyof User] as string).trim()
+            ).length;
+            updatedUser.profileCompleteness = Math.round((completedFields / requiredFields.length) * 100);
+            
+            return { currentUser: updatedUser };
+          }
+          return state;
+        });
+      },
+
+      getUserProfile: (walletAddress) => {
+        const state = get();
+        return state.currentUser?.walletAddress === walletAddress ? state.currentUser : null;
+      },
+
       addTrack: (trackData) => {
         const id = `track-${Date.now()}`;
         const track: Track = {
@@ -106,6 +167,14 @@ const useAppStore = create<AppState>()(
           tracks: state.tracks.map((track) =>
             track.id === id ? { ...track, ...updates } : track
           )
+        }));
+      },
+
+      deleteTrack: (id) => {
+        set((state) => ({
+          tracks: state.tracks.filter(track => track.id !== id),
+          investments: state.investments.filter(inv => inv.trackId !== id),
+          royaltyDistributions: state.royaltyDistributions.filter(dist => dist.trackId !== id)
         }));
       },
 

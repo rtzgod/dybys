@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { WalletConnect } from './WalletConnect';
 import { ClientOnly } from './ClientOnly';
-import { Music, TrendingUp, User, Upload, Settings } from 'lucide-react';
+import { Music, TrendingUp, User, Upload, Settings, UserCircle } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navigation = [
@@ -13,6 +13,7 @@ const navigation = [
   { name: 'Upload', href: '/artist/upload', icon: Upload },
   { name: 'Dashboard', href: '/artist/dashboard', icon: Settings },
   { name: 'Portfolio', href: '/investor/portfolio', icon: User },
+  { name: 'Profile', href: '/profile', icon: UserCircle },
 ];
 
 export function Navigation() {

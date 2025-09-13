@@ -42,7 +42,7 @@ export default function ArtistDashboardPage() {
   });
 
   const { connected, publicKey } = useWallet();
-  const { tracks, updateTrack, investments, getInvestmentsByTrack, addRoyaltyDistribution, getRoyaltyDistributionsByTrack } = useAppStore();
+  const { tracks, updateTrack, deleteTrack, investments, getInvestmentsByTrack, addRoyaltyDistribution, getRoyaltyDistributionsByTrack } = useAppStore();
 
   // Get artist's tracks
   const artistTracks = tracks.filter(track => 
@@ -80,12 +80,18 @@ export default function ArtistDashboardPage() {
   const handleUpdateTrack = () => {
     if (!selectedTrack) return;
 
-    updateTrack(selectedTrack.id, {
+    const updates: any = {
       title: editFormData.title,
       description: editFormData.description,
       genre: editFormData.genre,
-      pricePerToken: parseFloat(editFormData.pricePerToken) || selectedTrack.pricePerToken,
-    });
+    };
+
+    // Only allow price changes for non-tokenized tracks
+    if (!selectedTrack.isTokenized) {
+      updates.pricePerToken = parseFloat(editFormData.pricePerToken) || selectedTrack.pricePerToken;
+    }
+
+    updateTrack(selectedTrack.id, updates);
 
     toast.success('Track updated successfully!', {
       description: 'Your track information has been updated.'
@@ -158,6 +164,24 @@ export default function ArtistDashboardPage() {
       console.error('Royalty distribution failed:', error);
       toast.error('Failed to distribute royalties. Please try again.');
     }
+  };
+
+  const handleDeleteTrack = (track: any) => {
+    setSelectedTrack(track);
+    setShowDeleteDialog(true);
+  };
+
+  const confirmDeleteTrack = () => {
+    if (!selectedTrack) return;
+
+    deleteTrack(selectedTrack.id);
+    
+    toast.success('Track deleted successfully!', {
+      description: 'Your track has been removed from the platform.'
+    });
+    
+    setShowDeleteDialog(false);
+    setSelectedTrack(null);
   };
 
   if (!connected) {
@@ -321,6 +345,17 @@ export default function ArtistDashboardPage() {
                             <Edit className="h-4 w-4 mr-1" />
                             Edit
                           </Button>
+                          {!track.isTokenized && (
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDeleteTrack(track)}
+                              className="text-red-600 hover:text-red-700 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-4 w-4 mr-1" />
+                              Delete
+                            </Button>
+                          )}
                           {track.isTokenized && stats.tokensSold > 0 && (
                             <Button
                               size="sm"
@@ -506,7 +541,13 @@ export default function ArtistDashboardPage() {
                   step="0.001"
                   value={editFormData.pricePerToken}
                   onChange={(e) => setEditFormData(prev => ({ ...prev, pricePerToken: e.target.value }))}
+                  disabled={selectedTrack?.isTokenized}
                 />
+                {selectedTrack?.isTokenized && (
+                  <p className="text-xs text-muted-foreground">
+                    Price cannot be changed after tokenization to protect investor interests
+                  </p>
+                )}
               </div>
             </div>
           </div>
@@ -592,6 +633,44 @@ export default function ArtistDashboardPage() {
             >
               <Send className="h-4 w-4 mr-1" />
               Distribute Royalty
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete Track Dialog */}
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Track</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete "{selectedTrack?.title}"? This action cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          
+          <div className="bg-destructive/10 p-4 rounded-lg border border-destructive/20">
+            <div className="flex items-start space-x-3">
+              <Trash2 className="h-5 w-5 text-destructive mt-0.5" />
+              <div>
+                <h4 className="font-medium text-destructive">Warning</h4>
+                <p className="text-sm text-muted-foreground mt-1">
+                  This will permanently remove the track and all associated data. 
+                  Only non-tokenized tracks can be deleted.
+                </p>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
+              Cancel
+            </Button>
+            <Button 
+              variant="destructive" 
+              onClick={confirmDeleteTrack}
+            >
+              <Trash2 className="h-4 w-4 mr-1" />
+              Delete Track
             </Button>
           </DialogFooter>
         </DialogContent>

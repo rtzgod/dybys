@@ -16,6 +16,9 @@ interface Track {
   artist: {
     email: string;
     walletAddress: string;
+    displayName?: string;
+    firstName?: string;
+    lastName?: string;
   };
   fileUrl: string;
   isTokenized: boolean;
@@ -129,7 +132,9 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
             <CardTitle className="text-lg">{track.title}</CardTitle>
             <CardDescription className="flex items-center gap-1">
               <User className="w-3 h-3" />
-              {track.artist.email}
+              {track.artist.displayName || 
+               `${track.artist.firstName || ''} ${track.artist.lastName || ''}`.trim() ||
+               track.artist.email}
             </CardDescription>
           </div>
           <Badge variant={track.isTokenized ? "default" : "secondary"}>

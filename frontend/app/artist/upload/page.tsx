@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
-import { Upload, Music, Coins, Play, Pause, DollarSign, Users } from 'lucide-react';
+import { Upload, Music, Coins, Play, Pause, DollarSign, Users, X, AlertCircle } from 'lucide-react';
 import { useWallet } from '@solana/wallet-adapter-react';
 import useAppStore from '@/lib/store';
 import { toast } from 'sonner';
@@ -23,41 +23,133 @@ interface TrackFormData {
   royaltyPercentage: string;
 }
 
+interface ValidationErrors {
+  title?: string;
+  description?: string;
+  genre?: string;
+  audioFile?: string;
+  totalSupply?: string;
+  pricePerToken?: string;
+  royaltyPercentage?: string;
+}
+
 export default function ArtistUploadPage() {
   const [activeTab, setActiveTab] = useState('upload');
   const [isUploading, setIsUploading] = useState(false);
   const [isTokenizing, setIsTokenizing] = useState(false);
   const [uploadedTrack, setUploadedTrack] = useState<any>(null);
+  const [validationErrors, setValidationErrors] = useState<ValidationErrors>({});
   const [formData, setFormData] = useState<TrackFormData>({
     title: '',
     description: '',
     genre: '',
     audioFile: null,
     totalSupply: '1000',
-    pricePerToken: '0.1',
+    pricePerToken: '0.01',
     royaltyPercentage: '1000', // 10% in basis points
   });
   
   const { connected, publicKey } = useWallet();
-  const { addTrack, updateTrack, setCurrentUser } = useAppStore();
+  const { addTrack, updateTrack, setCurrentUser, currentUser } = useAppStore();
 
   const handleInputChange = (field: keyof TrackFormData, value: string) => {
     setFormData(prev => ({
       ...prev,
       [field]: value
     }));
+    
+    // Clear validation error when user starts typing
+    if (validationErrors[field]) {
+      setValidationErrors(prev => ({
+        ...prev,
+        [field]: undefined
+      }));
+    }
+  };
+
+  const validateUploadForm = (): boolean => {
+    const errors: ValidationErrors = {};
+    
+    if (!formData.title.trim()) {
+      errors.title = 'Track title is required';
+    } else if (formData.title.length > 100) {
+      errors.title = 'Track title must be less than 100 characters';
+    }
+    
+    if (!formData.audioFile) {
+      errors.audioFile = 'Audio file is required';
+    } else {
+      const fileSizeMB = formData.audioFile.size / (1024 * 1024);
+      if (fileSizeMB > 50) {
+        errors.audioFile = 'File size must be less than 50MB';
+      }
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  const validateTokenizeForm = (): boolean => {
+    const errors: ValidationErrors = {};
+    
+    const totalSupply = parseInt(formData.totalSupply);
+    if (isNaN(totalSupply) || totalSupply < 100) {
+      errors.totalSupply = 'Total supply must be at least 100 tokens';
+    } else if (totalSupply > 1000000) {
+      errors.totalSupply = 'Total supply cannot exceed 1,000,000 tokens';
+    }
+    
+    const pricePerToken = parseFloat(formData.pricePerToken);
+    if (isNaN(pricePerToken) || pricePerToken < 0.001) {
+      errors.pricePerToken = 'Price per token must be at least 0.001 SOL';
+    } else if (pricePerToken > 10) {
+      errors.pricePerToken = 'Price per token cannot exceed 10 SOL';
+    }
+    
+    const royalty = parseInt(formData.royaltyPercentage);
+    if (isNaN(royalty) || royalty < 100) { // 1%
+      errors.royaltyPercentage = 'Royalty percentage must be at least 1%';
+    } else if (royalty > 5000) { // 50%
+      errors.royaltyPercentage = 'Royalty percentage cannot exceed 50%';
+    }
+    
+    setValidationErrors(errors);
+    return Object.keys(errors).length === 0;
   };
 
   const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const file = event.target.files?.[0];
     if (file) {
-      if (file.type.startsWith('audio/')) {
-        setFormData(prev => ({
+      if (!file.type.startsWith('audio/')) {
+        setValidationErrors(prev => ({
           ...prev,
-          audioFile: file
+          audioFile: 'Please select an audio file (MP3, WAV, FLAC, etc.)'
         }));
-      } else {
         toast.error('Please select an audio file');
+        return;
+      }
+      
+      const fileSizeMB = file.size / (1024 * 1024);
+      if (fileSizeMB > 50) {
+        setValidationErrors(prev => ({
+          ...prev,
+          audioFile: 'File size must be less than 50MB'
+        }));
+        toast.error('File size must be less than 50MB');
+        return;
+      }
+      
+      setFormData(prev => ({
+        ...prev,
+        audioFile: file
+      }));
+      
+      // Clear any existing audio file errors
+      if (validationErrors.audioFile) {
+        setValidationErrors(prev => ({
+          ...prev,
+          audioFile: undefined
+        }));
       }
     }
   };
@@ -68,8 +160,8 @@ export default function ArtistUploadPage() {
       return;
     }
 
-    if (!formData.title || !formData.audioFile) {
-      toast.error('Please fill in all required fields');
+    if (!validateUploadForm()) {
+      toast.error('Please fix the validation errors');
       return;
     }
 
@@ -78,7 +170,7 @@ export default function ArtistUploadPage() {
     try {
       // Create file URL (in real app, upload to IPFS/cloud storage)
       // For now, use the browser's object URL for the uploaded file
-      const fileUrl = URL.createObjectURL(formData.audioFile);
+      const fileUrl = URL.createObjectURL(formData.audioFile!);
       
       // Add track to store
       const trackId = addTrack({
@@ -86,8 +178,11 @@ export default function ArtistUploadPage() {
         description: formData.description,
         genre: formData.genre,
         artist: {
-          email: `artist@${publicKey?.toString().slice(0, 8)}.com`, // Mock email
-          walletAddress: publicKey?.toString() || ''
+          email: currentUser?.email || `artist@${publicKey?.toString().slice(0, 8)}.com`,
+          walletAddress: publicKey?.toString() || '',
+          displayName: currentUser?.displayName,
+          firstName: currentUser?.firstName,
+          lastName: currentUser?.lastName
         },
         fileUrl,
         isTokenized: false
@@ -119,6 +214,11 @@ export default function ArtistUploadPage() {
 
   const handleTokenizeTrack = async () => {
     if (!uploadedTrack || !connected) return;
+
+    if (!validateTokenizeForm()) {
+      toast.error('Please fix the validation errors');
+      return;
+    }
 
     setIsTokenizing(true);
 
@@ -154,10 +254,11 @@ export default function ArtistUploadPage() {
         genre: '',
         audioFile: null,
         totalSupply: '1000',
-        pricePerToken: '0.1',
+        pricePerToken: '0.01',
         royaltyPercentage: '1000',
       });
       setUploadedTrack(null);
+      setValidationErrors({});
       setActiveTab('upload');
 
     } catch (error) {
@@ -166,6 +267,48 @@ export default function ArtistUploadPage() {
     } finally {
       setIsTokenizing(false);
     }
+  };
+
+  const handleCancelUpload = () => {
+    setFormData({
+      title: '',
+      description: '',
+      genre: '',
+      audioFile: null,
+      totalSupply: '1000',
+      pricePerToken: '0.01',
+      royaltyPercentage: '1000',
+    });
+    setValidationErrors({});
+    toast.info('Upload cancelled');
+  };
+
+  const handleCancelTokenization = () => {
+    setFormData(prev => ({
+      ...prev,
+      totalSupply: '1000',
+      pricePerToken: '0.01',
+      royaltyPercentage: '1000',
+    }));
+    setValidationErrors({});
+    setActiveTab('upload');
+    toast.info('Tokenization cancelled');
+  };
+
+  const handleStartOver = () => {
+    setFormData({
+      title: '',
+      description: '',
+      genre: '',
+      audioFile: null,
+      totalSupply: '1000',
+      pricePerToken: '0.01',
+      royaltyPercentage: '1000',
+    });
+    setUploadedTrack(null);
+    setValidationErrors({});
+    setActiveTab('upload');
+    toast.info('Starting over with new track');
   };
 
   if (!connected) {
@@ -231,7 +374,9 @@ export default function ArtistUploadPage() {
               {/* File Upload */}
               <div className="space-y-2">
                 <Label htmlFor="audio-file">Audio File *</Label>
-                <div className="border-2 border-dashed border-muted-foreground/25 rounded-lg p-6 text-center">
+                <div className={`border-2 border-dashed rounded-lg p-6 text-center ${
+                  validationErrors.audioFile ? 'border-red-300 bg-red-50' : 'border-muted-foreground/25'
+                }`}>
                   <input
                     id="audio-file"
                     type="file"
@@ -251,12 +396,18 @@ export default function ArtistUploadPage() {
                         <>
                           <span className="text-muted-foreground">Click to upload audio file</span>
                           <br />
-                          <span className="text-xs text-muted-foreground">MP3, WAV, FLAC supported</span>
+                          <span className="text-xs text-muted-foreground">MP3, WAV, FLAC supported • Max 50MB</span>
                         </>
                       )}
                     </div>
                   </label>
                 </div>
+                {validationErrors.audioFile && (
+                  <div className="flex items-center space-x-2 text-red-600 text-sm">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>{validationErrors.audioFile}</span>
+                  </div>
+                )}
               </div>
 
               {/* Track Information */}
@@ -268,7 +419,15 @@ export default function ArtistUploadPage() {
                     placeholder="Enter track title"
                     value={formData.title}
                     onChange={(e) => handleInputChange('title', e.target.value)}
+                    className={validationErrors.title ? 'border-red-300 focus:border-red-500' : ''}
+                    maxLength={100}
                   />
+                  {validationErrors.title && (
+                    <div className="flex items-center space-x-2 text-red-600 text-sm">
+                      <AlertCircle className="h-4 w-4" />
+                      <span>{validationErrors.title}</span>
+                    </div>
+                  )}
                 </div>
                 
                 <div className="space-y-2">
@@ -294,11 +453,20 @@ export default function ArtistUploadPage() {
               </div>
             </CardContent>
 
-            <CardFooter>
+            <CardFooter className="flex space-x-3">
+              <Button 
+                variant="outline"
+                onClick={handleCancelUpload}
+                disabled={isUploading}
+                className="flex-1"
+              >
+                <X className="h-4 w-4 mr-1" />
+                Cancel
+              </Button>
               <Button 
                 onClick={handleUploadTrack}
-                disabled={isUploading || !formData.title || !formData.audioFile}
-                className="w-full"
+                disabled={isUploading || !formData.title.trim() || !formData.audioFile}
+                className="flex-1"
               >
                 {isUploading ? 'Uploading...' : 'Upload Track'}
               </Button>
@@ -338,47 +506,75 @@ export default function ArtistUploadPage() {
               {/* Tokenization Parameters */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="totalSupply">Total Token Supply</Label>
+                  <Label htmlFor="totalSupply">Total Token Supply *</Label>
                   <Input
                     id="totalSupply"
                     type="number"
                     placeholder="1000"
                     value={formData.totalSupply}
                     onChange={(e) => handleInputChange('totalSupply', e.target.value)}
+                    className={validationErrors.totalSupply ? 'border-red-300 focus:border-red-500' : ''}
+                    min="100"
+                    max="1000000"
                   />
                   <p className="text-xs text-muted-foreground">
-                    Total number of tokens to create
+                    Total number of tokens to create (100 - 1,000,000)
                   </p>
+                  {validationErrors.totalSupply && (
+                    <div className="flex items-center space-x-2 text-red-600 text-sm">
+                      <AlertCircle className="h-4 w-4" />
+                      <span>{validationErrors.totalSupply}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="pricePerToken">Price per Token (SOL)</Label>
+                  <Label htmlFor="pricePerToken">Price per Token (SOL) *</Label>
                   <Input
                     id="pricePerToken"
                     type="number"
-                    step="0.01"
-                    placeholder="0.1"
+                    step="0.001"
+                    placeholder="0.01"
                     value={formData.pricePerToken}
                     onChange={(e) => handleInputChange('pricePerToken', e.target.value)}
+                    className={validationErrors.pricePerToken ? 'border-red-300 focus:border-red-500' : ''}
+                    min="0.001"
+                    max="10"
                   />
                   <p className="text-xs text-muted-foreground">
-                    SOL price for each token
+                    SOL price for each token (0.001 - 10 SOL)
                   </p>
+                  {validationErrors.pricePerToken && (
+                    <div className="flex items-center space-x-2 text-red-600 text-sm">
+                      <AlertCircle className="h-4 w-4" />
+                      <span>{validationErrors.pricePerToken}</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="royaltyPercentage">Token Holder Royalty Share (%)</Label>
+                <Label htmlFor="royaltyPercentage">Token Holder Royalty Share (%) *</Label>
                 <Input
                   id="royaltyPercentage"
                   type="number"
                   placeholder="10"
                   value={(parseInt(formData.royaltyPercentage) / 100).toString()}
-                  onChange={(e) => handleInputChange('royaltyPercentage', (parseFloat(e.target.value) * 100).toString())}
+                  onChange={(e) => handleInputChange('royaltyPercentage', (parseFloat(e.target.value || '0') * 100).toString())}
+                  className={validationErrors.royaltyPercentage ? 'border-red-300 focus:border-red-500' : ''}
+                  min="1"
+                  max="50"
+                  step="0.1"
                 />
                 <p className="text-xs text-muted-foreground">
-                  Percentage of future royalties shared with token holders
+                  Percentage of future royalties shared with token holders (1% - 50%)
                 </p>
+                {validationErrors.royaltyPercentage && (
+                  <div className="flex items-center space-x-2 text-red-600 text-sm">
+                    <AlertCircle className="h-4 w-4" />
+                    <span>{validationErrors.royaltyPercentage}</span>
+                  </div>
+                )}
               </div>
 
               {/* Projection */}
@@ -404,10 +600,20 @@ export default function ArtistUploadPage() {
             <CardFooter className="flex space-x-3">
               <Button
                 variant="outline"
-                onClick={() => setActiveTab('upload')}
+                onClick={handleCancelTokenization}
+                disabled={isTokenizing}
                 className="flex-1"
               >
-                Back to Upload
+                <X className="h-4 w-4 mr-1" />
+                Cancel
+              </Button>
+              <Button
+                variant="outline"
+                onClick={handleStartOver}
+                disabled={isTokenizing}
+                className="flex-1"
+              >
+                Start Over
               </Button>
               <Button
                 onClick={handleTokenizeTrack}
