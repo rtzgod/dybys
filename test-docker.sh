@@ -51,6 +51,12 @@ if curl -f http://localhost:8899 -X POST -H "Content-Type: application/json" -d 
     echo "✅ Solana validator is responding on port 8899"
 else
     echo "❌ Solana validator is not responding"
+    echo "🔍 Checking Solana validator logs..."
+    docker-compose logs solana-validator | tail -10
+    if docker-compose logs solana-validator | grep -i "UnableToSetOpenFileDescriptorLimit" > /dev/null; then
+        echo "⚠️  File descriptor limit issue detected. This should be handled by Docker ulimits."
+        echo "   Try: docker-compose restart solana-validator"
+    fi
 fi
 
 # Test database connection

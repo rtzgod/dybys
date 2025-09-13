@@ -219,6 +219,19 @@ docker system prune -a
 docker volume prune
 ```
 
+### "Solana validator not starting" / "File descriptor limit"
+```bash
+# Check Solana validator logs
+docker-compose logs solana-validator
+
+# If you see "UnableToSetOpenFileDescriptorLimit"
+docker-compose restart solana-validator
+
+# For persistent issues on Linux
+echo "fs.file-max = 2097152" | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+```
+
 ## 🔧 Configuration
 
 ### Docker Setup (Recommended)
