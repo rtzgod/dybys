@@ -21,6 +21,7 @@ interface Track {
     lastName?: string;
   };
   fileUrl: string;
+  audioFile?: File;
   isTokenized: boolean;
   totalSupply?: number;
   pricePerToken?: number;
@@ -38,6 +39,8 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [audioUrl, setAudioUrl] = useState<string>('');
+  const [audioError, setAudioError] = useState<string>('');
   const audioRef = useRef<HTMLAudioElement>(null);
   const { connected, publicKey } = useWallet();
 
@@ -48,6 +51,27 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
   
   // Check if the current user is the artist of this track
   const isOwnTrack = Boolean(connected && publicKey && track.artist.walletAddress === publicKey.toString());
+
+  // Create fresh audio URL when component mounts or track changes
+  useEffect(() => {
+    setAudioError('');
+    
+    if (track.audioFile) {
+      // Create fresh URL from stored File object
+      const url = URL.createObjectURL(track.audioFile);
+      setAudioUrl(url);
+      
+      // Cleanup previous URL
+      return () => {
+        URL.revokeObjectURL(url);
+      };
+    } else if (track.fileUrl) {
+      // Fallback to stored URL
+      setAudioUrl(track.fileUrl);
+    } else {
+      setAudioError('Audio file not available');
+    }
+  }, [track.audioFile, track.fileUrl, track.id]);
 
   useEffect(() => {
     const audio = audioRef.current;
@@ -64,18 +88,27 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
 
     const handleLoadedMetadata = () => {
       setDuration(audio.duration || 0);
+      setAudioError('');
+    };
+
+    const handleError = () => {
+      console.error('Audio loading error:', audio.error);
+      setAudioError('Failed to load audio file');
+      setIsPlaying(false);
     };
 
     audio.addEventListener('timeupdate', handleTimeUpdate);
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('loadedmetadata', handleLoadedMetadata);
+    audio.addEventListener('error', handleError);
 
     return () => {
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
+      audio.removeEventListener('error', handleError);
     };
-  }, []);
+  }, [audioUrl]);
 
   // Cleanup on unmount
   useEffect(() => {
@@ -88,22 +121,40 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
 
   const handlePlay = () => {
     const audio = audioRef.current;
-    if (!audio) return;
+    if (!audio || audioError) {
+      toast.error('Audio preview not available', {
+        description: audioError || 'Audio file not found'
+      });
+      return;
+    }
 
     if (isPlaying) {
       audioManager.pause();
       setIsPlaying(false);
     } else {
+      // Ensure audio source is set
+      if (!audio.src && audioUrl) {
+        audio.src = audioUrl;
+      }
+      
       audioManager.play(audio, setIsPlaying).then(() => {
         setIsPlaying(true);
+        setAudioError('');
       }).catch((error) => {
         console.error('Audio play failed:', error);
-        // Show a toast for missing audio files
-        if (error.name === 'NotSupportedError' || error.name === 'NotAllowedError') {
-          toast.error('Audio preview not available', {
-            description: 'File may be missing or format not supported'
-          });
+        let errorMessage = 'Audio preview not available';
+        let description = 'Failed to play audio file';
+        
+        if (error.name === 'NotSupportedError') {
+          description = 'Audio format not supported';
+        } else if (error.name === 'NotAllowedError') {
+          description = 'Audio blocked by browser - please interact with page first';
+        } else if (error.name === 'AbortError') {
+          description = 'Audio loading was interrupted';
         }
+        
+        toast.error(errorMessage, { description });
+        setAudioError(description);
         setIsPlaying(false);
       });
     }
@@ -161,9 +212,11 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
             </Button>
             <div className="flex-1 space-y-1">
               <div className="flex justify-between text-xs">
-                <span className="font-medium">🎵 Audio Preview</span>
+                <span className={`font-medium ${audioError ? 'text-red-600' : ''}`}>
+                  🎵 Audio Preview {audioError ? '(Error)' : ''}
+                </span>
                 <span className="text-muted-foreground">
-                  {formatTime(currentTime)} / {formatTime(duration)}
+                  {audioError ? 'N/A' : `${formatTime(currentTime)} / ${formatTime(duration)}`}
                 </span>
               </div>
               <div className="relative">
@@ -190,9 +243,16 @@ export function TrackCard({ track, onInvest, showInvestButton = true }: TrackCar
         {/* Hidden audio element */}
         <audio
           ref={audioRef}
-          src={track.fileUrl}
+          {...(audioUrl && { src: audioUrl })}
           preload="metadata"
         />
+        
+        {/* Show audio error if any */}
+        {audioError && (
+          <div className="text-center py-2 text-red-600 text-sm">
+            <span>⚠️ {audioError}</span>
+          </div>
+        )}
 
         {track.isTokenized && (
           <>

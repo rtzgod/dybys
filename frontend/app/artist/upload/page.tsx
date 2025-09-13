@@ -185,6 +185,7 @@ export default function ArtistUploadPage() {
           lastName: currentUser?.lastName
         },
         fileUrl,
+        audioFile: formData.audioFile || undefined,
         isTokenized: false
       });
 

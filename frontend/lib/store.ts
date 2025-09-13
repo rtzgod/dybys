@@ -16,6 +16,7 @@ export interface Track {
     lastName?: string;
   };
   fileUrl: string;
+  audioFile?: File; // Store the actual file object for persistent access
   isTokenized: boolean;
   totalSupply?: number;
   pricePerToken?: number;
@@ -86,6 +87,7 @@ interface AppState {
   setCurrentUser: (user: User | null) => void;
   updateUserProfile: (walletAddress: string, profileData: Partial<User>) => void;
   getUserProfile: (walletAddress: string) => User | null;
+  updateArtistInfoInTracks: (walletAddress: string, artistInfo: Partial<Track['artist']>) => void;
 
   // Tracks state
   tracks: Track[];
@@ -135,7 +137,27 @@ const useAppStore = create<AppState>()(
             ).length;
             updatedUser.profileCompleteness = Math.round((completedFields / requiredFields.length) * 100);
             
-            return { currentUser: updatedUser };
+            // Update artist info in all tracks by this user
+            const updatedTracks = state.tracks.map(track => {
+              if (track.artist.walletAddress === walletAddress) {
+                return {
+                  ...track,
+                  artist: {
+                    ...track.artist,
+                    email: updatedUser.email || track.artist.email,
+                    displayName: updatedUser.displayName,
+                    firstName: updatedUser.firstName,
+                    lastName: updatedUser.lastName
+                  }
+                };
+              }
+              return track;
+            });
+            
+            return { 
+              currentUser: updatedUser,
+              tracks: updatedTracks
+            };
           }
           return state;
         });
@@ -144,6 +166,23 @@ const useAppStore = create<AppState>()(
       getUserProfile: (walletAddress) => {
         const state = get();
         return state.currentUser?.walletAddress === walletAddress ? state.currentUser : null;
+      },
+
+      updateArtistInfoInTracks: (walletAddress, artistInfo) => {
+        set((state) => ({
+          tracks: state.tracks.map(track => {
+            if (track.artist.walletAddress === walletAddress) {
+              return {
+                ...track,
+                artist: {
+                  ...track.artist,
+                  ...artistInfo
+                }
+              };
+            }
+            return track;
+          })
+        }));
       },
 
       addTrack: (trackData) => {
